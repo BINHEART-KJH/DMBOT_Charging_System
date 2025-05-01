@@ -80,7 +80,7 @@ void loop() {
     Serial.println("🔄 Advertising restarted");
   }
   else {
-    // 광고 중 LED 깜박임
+    // 광고 중 LED 깜박임....
     unsigned long now = millis();
     if (now - previousMillis >= BLINK_INTERVAL) {
       previousMillis = now;
