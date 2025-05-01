@@ -65,7 +65,7 @@ void loop() {
     } else {
       Serial.println("💡 Entering operational state (LED ON)");
       digitalWrite(LED_PIN, HIGH);
-      // 여기서 충전 컨트롤 로직 수행… tes testㅅㅅㅅㅅㅅ
+      // 여기서 충전 컨트롤 로직 수행…
       while (central.connected()) {
         BLE.poll();
       }
