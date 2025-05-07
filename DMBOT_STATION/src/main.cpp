@@ -20,7 +20,6 @@ void setup() {
 
   if (!BLE.begin()) {
     Serial.println("❌ BLE init failed!");
-    while (1);
   }
   BLE.setLocalName("DMBOT-STATION");
 
@@ -30,15 +29,15 @@ void setup() {
 void loop() {
   bool docking = (digitalRead(DOCK_PIN) == HIGH);
 
-  // 도킹 ON → 스캔 시작
+  // 1) 도킹 ON → 스캔 연속 모드 시작
   if (docking && !scanningActive) {
-    Serial.println("⚓ Docking ON → BLE scan ON");
-    BLE.scanForName(TARGET_NAME);
+    Serial.println("⚓ Docking ON → BLE.scan() 시작");
+    BLE.scan();            // scanForName 대신
     scanningActive = true;
   }
-  // 도킹 OFF → 스캔 중지 + BLE 재초기화
+  // 2) 도킹 OFF → 스캔 중지 + BLE 모듈 리셋
   else if (!docking && scanningActive) {
-    Serial.println("⛔ Docking OFF → BLE scan OFF & reset");
+    Serial.println("⛔ Docking OFF → BLE.scan() 중지 & 모듈 리셋");
     BLE.stopScan();
     BLE.end();
     delay(100);
@@ -48,21 +47,25 @@ void loop() {
     }
     BLE.setLocalName("DMBOT-STATION");
     scanningActive = false;
-    Serial.println("🔄 BLE reset, waiting for docking...");
+    Serial.println("🔄 BLE reset 완료, 도킹 대기중...");
   }
 
-  // 도킹 중에만 디바이스 탐색 및 연결/인증 루틴
+  // 3) 도킹 중 스캔된 디바이스 핸들링
   if (docking && scanningActive) {
     BLEDevice peripheral = BLE.available();
-    if (peripheral && peripheral.rssi() >= RSSI_THRESHOLD) {
+    if (peripheral
+        && String(peripheral.localName()) == TARGET_NAME
+        && peripheral.rssi() >= RSSI_THRESHOLD) 
+    {
       Serial.println("───────────────────────────");
       Serial.print("Found → "); Serial.print(peripheral.localName());
       Serial.print(" ["); Serial.print(peripheral.address());
       Serial.print("], RSSI="); Serial.println(peripheral.rssi());
       Serial.println("───────────────────────────");
 
-      Serial.println("➡️  RSSI 조건 충족, 연결 시도...");
+      Serial.println("➡️  조건 충족, 연결 시도...");
       BLE.stopScan();
+      scanningActive = false;
 
       if (peripheral.connect()) {
         Serial.print("✅ Connected to "); Serial.println(peripheral.address());
@@ -78,9 +81,9 @@ void loop() {
             // 토큰 전송
             Serial.print("✉️  Sending token: "); Serial.println(AUTH_TOKEN);
             if (authChar.writeValue(AUTH_TOKEN)) {
-              Serial.println("✅ Auth token sent, entering operational state");
+              Serial.println("✅ Auth token sent, operational state 진입");
               digitalWrite(LED_PIN, HIGH);
-              // 연결 유지
+              // 연결 유지: 도킹이 유지되는 동안
               while (peripheral.connected() && docking) {
                 BLE.poll();
                 docking = (digitalRead(DOCK_PIN) == HIGH);
@@ -99,18 +102,17 @@ void loop() {
         Serial.println("❌ Connection failed");
       }
 
-      // 연결 종료 및 스캔 재개
+      // 연결 종료 및 재스캔 준비
       peripheral.disconnect();
-      Serial.println("🔄 Disconnected, restarting scan if docking");
+      Serial.println("🔄 Disconnected, docking 유지 시 재스캔");
       if (docking) {
-        BLE.scanForName(TARGET_NAME);
-      } else {
-        scanningActive = false;
+        BLE.scan();
+        scanningActive = true;
       }
     }
   }
 
-  // LED 상태: 연결 중 ON, 스캔 중 깜박, 그 외 OFF
+  // 4) LED 상태 표시
   if (BLE.connected()) {
     digitalWrite(LED_PIN, HIGH);
   } else if (scanningActive) {

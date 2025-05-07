@@ -7,7 +7,7 @@ const char* AUTH_TOKEN        = "DH-010226";
 BLEService       authService(AUTH_SERVICE_UUID);
 BLECharacteristic authChar(
   AUTH_CHAR_UUID,
-  BLEWrite,               // Central이 쓰기
+  BLEWrite,               // Central이 쓰기 허용
   strlen(AUTH_TOKEN)      // 토큰 길이
 );
 
@@ -17,12 +17,10 @@ const unsigned long BLINK_INTERVAL = 500;
 
 void setup() {
   Serial.begin(9600);
-
   pinMode(LED_PIN, OUTPUT);
 
   if (!BLE.begin()) {
     Serial.println("❌ BLE init failed");
-    while (1);
   }
 
   // Peripheral 설정
@@ -37,8 +35,7 @@ void setup() {
 void loop() {
   BLEDevice central = BLE.central();
   if (central) {
-    Serial.print("🔗 Connected: ");
-    Serial.println(central.address());
+    Serial.print("🔗 Connected: "); Serial.println(central.address());
 
     unsigned long start = millis();
     bool authed = false;
@@ -48,8 +45,7 @@ void loop() {
       BLE.poll();
       if (authChar.written()) {
         String recv = String((char*)authChar.value(), authChar.valueLength());
-        Serial.print("✉️  Received token: ");
-        Serial.println(recv);
+        Serial.print("✉️  Received token: "); Serial.println(recv);
         if (recv == AUTH_TOKEN) {
           authed = true;
           Serial.println("✅ Authenticated");
@@ -65,7 +61,7 @@ void loop() {
     } else {
       Serial.println("💡 Entering operational state (LED ON)");
       digitalWrite(LED_PIN, HIGH);
-      // 여기서 충전 컨트롤 로직 수행…
+      // 충전 컨트롤 로직 수행...
       while (central.connected()) {
         BLE.poll();
       }
@@ -80,7 +76,7 @@ void loop() {
     Serial.println("🔄 Advertising restarted");
   }
   else {
-    // 광고 중 LED 깜박임....
+    // 광고 중 LED 깜박임
     unsigned long now = millis();
     if (now - previousMillis >= BLINK_INTERVAL) {
       previousMillis = now;
