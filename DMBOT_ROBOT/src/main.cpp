@@ -1,86 +1,130 @@
+// ================= Robot (Central) - Refactored =================
 #include <ArduinoBLE.h>
 
-const char* AUTH_SERVICE_UUID = "12345678-1234-5678-1234-1234567890AB";
-const char* AUTH_CHAR_UUID    = "ABCD1234-5678-1234-5678-ABCDEF012345";
-const char* AUTH_TOKEN        = "DH-010226";
+const char *TARGET_NAME = "BLE-TEST";
+const char *SECRET_KEY = "DM_System_key";
 
-BLEService       authService(AUTH_SERVICE_UUID);
-BLECharacteristic authChar(
-  AUTH_CHAR_UUID,
-  BLEWrite,               // Central이 쓰기 허용
-  strlen(AUTH_TOKEN)      // 토큰 길이
-);
+BLEDevice peripheral;
+BLECharacteristic nonceChar;
+BLECharacteristic tokenChar;
+
+bool connected = false;
+String currentNonce = "";
 
 const int LED_PIN = LED_BUILTIN;
-unsigned long previousMillis = 0;
-const unsigned long BLINK_INTERVAL = 500;
+unsigned long lastBlink = 0;
+bool ledState = false;
+
+// === Utility ===
+uint32_t crc32(const uint8_t *data, size_t length) {
+  uint32_t crc = 0xFFFFFFFF;
+  for (size_t i = 0; i < length; i++) {
+    crc ^= data[i];
+    for (int j = 0; j < 8; j++)
+      crc = (crc & 1) ? (crc >> 1) ^ 0xEDB88320 : (crc >> 1);
+  }
+  return ~crc;
+}
+
+String generateToken(const String &nonce, const char *key) {
+  String input = nonce + String(key);
+  uint32_t token = crc32((const uint8_t *)input.c_str(), input.length());
+  char buf[9];
+  sprintf(buf, "%08X", token);
+  return String(buf);
+}
+
+void blinkWhileScanning() {
+  if (millis() - lastBlink >= 500) {
+    ledState = !ledState;
+    digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+    lastBlink = millis();
+  }
+}
+
+bool connectToPeripheral(BLEDevice found) {
+  Serial.print("🔗 Connecting to: ");
+  Serial.println(found.address());
+  peripheral = found;
+
+  if (!peripheral.connect()) {
+    Serial.println("❌ Connection failed");
+    return false;
+  }
+
+  Serial.println("✅ Connected!");
+
+  if (!peripheral.discoverAttributes()) {
+    Serial.println("❌ Attribute discovery failed");
+    peripheral.disconnect();
+    return false;
+  }
+
+  nonceChar = peripheral.characteristic("2A29");
+  tokenChar = peripheral.characteristic("2A2A");
+
+  if (!(nonceChar && nonceChar.canRead() && tokenChar && tokenChar.canWrite())) {
+    Serial.println("❌ Characteristics invalid");
+    peripheral.disconnect();
+    return false;
+  }
+
+  char buffer[21] = {0};
+  if (!nonceChar.readValue((uint8_t *)buffer, sizeof(buffer) - 1)) {
+    Serial.println("❌ Failed to read nonce");
+    peripheral.disconnect();
+    return false;
+  }
+  currentNonce = String(buffer);
+  Serial.println("📥 Nonce: " + currentNonce);
+
+  String token = generateToken(currentNonce, SECRET_KEY);
+  if (!tokenChar.writeValue(token.c_str())) {
+    Serial.println("❌ Failed to write token");
+    peripheral.disconnect();
+    return false;
+  }
+
+  Serial.println("📤 Sent token: " + token);
+  digitalWrite(LED_PIN, HIGH);
+  connected = true;
+  return true;
+}
 
 void setup() {
   Serial.begin(9600);
   pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
 
   if (!BLE.begin()) {
     Serial.println("❌ BLE init failed");
+    while (1);
   }
-
-  // Peripheral 설정
-  BLE.setLocalName("DMBOT-SERVICE");
-  authService.addCharacteristic(authChar);
-  BLE.addService(authService);
-  BLE.setAdvertisedService(authService);
-  BLE.advertise();
-  Serial.println("📡 Advertising DMBOT-SERVICE with auth");
+  Serial.println("✅ Robot Central initialized");
 }
 
 void loop() {
-  BLEDevice central = BLE.central();
-  if (central) {
-    Serial.print("🔗 Connected: "); Serial.println(central.address());
+  if (!connected) {
+    Serial.println("🔍 Scanning...");
+    BLE.scan();
 
-    unsigned long start = millis();
-    bool authed = false;
-
-    // 5초간 토큰 수신 대기
-    while (central.connected() && millis() - start < 5000) {
-      BLE.poll();
-      if (authChar.written()) {
-        String recv = String((char*)authChar.value(), authChar.valueLength());
-        Serial.print("✉️  Received token: "); Serial.println(recv);
-        if (recv == AUTH_TOKEN) {
-          authed = true;
-          Serial.println("✅ Authenticated");
-          break;
-        } else {
-          Serial.println("❌ Token mismatch");
-        }
+    unsigned long startScan = millis();
+    while (millis() - startScan < 5000) {
+      BLEDevice found = BLE.available();
+      if (found && found.localName() == TARGET_NAME) {
+        BLE.stopScan();
+        if (connectToPeripheral(found)) return;
       }
+      blinkWhileScanning();
     }
-
-    if (!authed) {
-      Serial.println("⏱️  Auth timeout → disconnect");
+    BLE.stopScan();
+  } else {
+    if (!peripheral.connected()) {
+      Serial.println("❎ Disconnected");
+      connected = false;
+      digitalWrite(LED_PIN, LOW);
     } else {
-      Serial.println("💡 Entering operational state (LED ON)");
       digitalWrite(LED_PIN, HIGH);
-      // 충전 컨트롤 로직 수행...
-      while (central.connected()) {
-        BLE.poll();
-      }
-      Serial.println("🔌 Central disconnected");
-    }
-
-    // 언제나 광고 재시작
-    central.disconnect();
-    BLE.stopAdvertise();
-    digitalWrite(LED_PIN, LOW);
-    BLE.advertise();
-    Serial.println("🔄 Advertising restarted");
-  }
-  else {
-    // 광고 중 LED 깜박임
-    unsigned long now = millis();
-    if (now - previousMillis >= BLINK_INTERVAL) {
-      previousMillis = now;
-      digitalWrite(LED_PIN, !digitalRead(LED_PIN));
     }
   }
 }
