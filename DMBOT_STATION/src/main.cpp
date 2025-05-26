@@ -34,7 +34,7 @@ void startAdvertising() {
     BLE.setLocalName("DMBOT-STATION");
     BLE.advertise();
     isAdvertising = true;
-    Serial.println("📡 Advertising started");
+    Serial.println("Advertising started");
   }
 }
 
@@ -42,7 +42,7 @@ void stopAdvertising() {
   if (isAdvertising) {
     BLE.stopAdvertise();
     isAdvertising = false;
-    Serial.println("🛑 Advertising stopped");
+    Serial.println("Advertising stopped");
   }
 }
 
@@ -57,7 +57,7 @@ bool isBlacklisted(String mac) {
 void addToBlacklist(String mac) {
   if (blacklistIndex < BLACKLIST_SIZE) {
     blacklist[blacklistIndex++] = mac;
-    Serial.println("🚫 Added to blacklist: " + mac);
+    Serial.println("Added to blacklist: " + mac);
   }
 }
 
@@ -65,19 +65,19 @@ void addToBlacklist(String mac) {
 void setup() {
   Serial.begin(9600);
   delay(1000);  // 시리얼 안정화
-  Serial.println("🔧 Setup 시작");
+  Serial.println("Setup 시작");
 
   pinMode(DOCK_PIN, INPUT);
 
   if (!BLE.begin()) {
-    Serial.println("❌ BLE 초기화 실패");
+    Serial.println("BLE 초기화 실패");
     while (1);
   }
 
   dummyService.addCharacteristic(dummyChar);
   BLE.setAdvertisedService(dummyService);
   BLE.addService(dummyService);
-  Serial.println("✅ BLE 서비스 등록 완료");
+  Serial.println("BLE 서비스 등록 완료");
 
   if (digitalRead(DOCK_PIN) == HIGH) {
     startAdvertising();
@@ -90,7 +90,7 @@ void loop() {
   switch (state) {
     case IDLE:
       if (digitalRead(DOCK_PIN) == HIGH) {
-        Serial.println("🟢 센서 ON → 광고 시작");
+        Serial.println("센서 ON → 광고 시작");
         startAdvertising();
         state = ADVERTISING;
       }
@@ -98,7 +98,7 @@ void loop() {
 
     case ADVERTISING:
       if (digitalRead(DOCK_PIN) == LOW) {
-        Serial.println("⚪ 센서 OFF → 광고 중단");
+        Serial.println("센서 OFF → 광고 중단");
         stopAdvertising();
         state = IDLE;
       } else {
@@ -107,17 +107,17 @@ void loop() {
           String mac = central.address();
 
           if (isBlacklisted(mac)) {
-            Serial.println("⛔ 블랙리스트 기기 접속 시도: " + mac);
+            Serial.println("블랙리스트 기기 접속 시도: " + mac);
             // 부하 줄이기 위해 disconnect 생략 가능
             return;
           }
 
           Serial.println("🔌 연결됨: " + mac);
-          Serial.print("📶 RSSI: ");
+          Serial.print("RSSI: ");
           Serial.println(central.rssi());
 
           if (central.rssi() < RSSI_THRESHOLD) {
-            Serial.println("❌ RSSI 너무 낮음, 연결 종료");
+            Serial.println("RSSI 너무 낮음, 연결 종료");
             central.disconnect();
             return;
           }
@@ -143,14 +143,14 @@ void loop() {
         int len = dummyChar.valueLength();
         const uint8_t *val = dummyChar.value();
         String name((const char *)val, len);
-        Serial.println("📥 localName 수신됨: " + name);
+        Serial.println("localName 수신됨: " + name);
         gotLocalName = true;
         state = CONNECTED;
         break;
       }
 
       if (!gotLocalName && millis() - connectedTime >= AUTH_TIMEOUT_MS) {
-        Serial.println("⏳ 인증 타임아웃 (5초 경과)");
+        Serial.println("인증 타임아웃 (5초 경과)");
         addToBlacklist(central.address());
         central.disconnect();
         stopAdvertising();
@@ -160,13 +160,13 @@ void loop() {
     } break;
 
     case CONNECTED:
-      Serial.println("✅ 인증 성공 상태 - CONNECTED");
+      Serial.println("인증 성공 상태 - CONNECTED");
       // 릴레이 제어나 다음 단계 로직 여기에 추가 가능
       delay(1000);  // 로그 과다 방지
       break;
 
     case DISCONNECTING:
-      Serial.println("🔄 DISCONNECTING → IDLE");
+      Serial.println("DISCONNECTING → IDLE");
       stopAdvertising();
       state = IDLE;
       break;
