@@ -48,14 +48,14 @@ bool connectToPeripheral(BLEDevice found) {
   peripheral = found;
 
   if (!peripheral.connect()) {
-    Serial.println("❌ Connection failed");
+    Serial.println("Connection failed");
     return false;
   }
 
-  Serial.println("✅ Connected!");
+  Serial.println("Connected!");
 
   if (!peripheral.discoverAttributes()) {
-    Serial.println("❌ Attribute discovery failed");
+    Serial.println("Attribute discovery failed");
     peripheral.disconnect();
     return false;
   }
@@ -64,28 +64,28 @@ bool connectToPeripheral(BLEDevice found) {
   tokenChar = peripheral.characteristic("2A2A");
 
   if (!(nonceChar && nonceChar.canRead() && tokenChar && tokenChar.canWrite())) {
-    Serial.println("❌ Characteristics invalid");
+    Serial.println("Characteristics invalid");
     peripheral.disconnect();
     return false;
   }
 
   char buffer[21] = {0};
   if (!nonceChar.readValue((uint8_t *)buffer, sizeof(buffer) - 1)) {
-    Serial.println("❌ Failed to read nonce");
+    Serial.println("Failed to read nonce");
     peripheral.disconnect();
     return false;
   }
   currentNonce = String(buffer);
-  Serial.println("📥 Nonce: " + currentNonce);
+  Serial.println("Nonce: " + currentNonce);
 
   String token = generateToken(currentNonce, SECRET_KEY);
   if (!tokenChar.writeValue(token.c_str())) {
-    Serial.println("❌ Failed to write token");
+    Serial.println("Failed to write token");
     peripheral.disconnect();
     return false;
   }
 
-  Serial.println("📤 Sent token: " + token);
+  Serial.println("Sent token: " + token);
   digitalWrite(LED_PIN, HIGH);
   connected = true;
   return true;
@@ -97,15 +97,15 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
 
   if (!BLE.begin()) {
-    Serial.println("❌ BLE init failed");
+    Serial.println("BLE init failed");
     while (1);
   }
-  Serial.println("✅ Robot Central initialized");
+  Serial.println("Robot Central initialized");
 }
 
 void loop() {
   if (!connected) {
-    Serial.println("🔍 Scanning...");
+    Serial.println("Scanning...");
     BLE.scan();
 
     unsigned long startScan = millis();
@@ -120,7 +120,7 @@ void loop() {
     BLE.stopScan();
   } else {
     if (!peripheral.connected()) {
-      Serial.println("❎ Disconnected");
+      Serial.println("Disconnected");
       connected = false;
       digitalWrite(LED_PIN, LOW);
     } else {
