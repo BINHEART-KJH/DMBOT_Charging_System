@@ -1,5 +1,5 @@
-// ================= Station (Peripheral) - Refactored =================
 #include <ArduinoBLE.h>
+#include <FastLED.h>
 #include <string>
 
 enum BLEState { IDLE, ADVERTISING, WAIT_AUTH, CONNECTED };
@@ -20,8 +20,13 @@ bool isAdvertising = false;
 bool gotAuth = false;
 unsigned long connectedTime = 0;
 
+// ===== LED =====
 const int LED_PIN = LED_BUILTIN;
+#define RGB_PIN     21
+#define NUM_LEDS    10
+CRGB leds[NUM_LEDS];
 
+// ===== 유틸 =====
 uint32_t crc32(const uint8_t *data, size_t length) {
   uint32_t crc = 0xFFFFFFFF;
   for (size_t i = 0; i < length; i++) {
@@ -51,6 +56,18 @@ bool isValidToken(const String &token) {
   return token.equalsIgnoreCase(generateToken(currentNonce, SECRET_KEY));
 }
 
+void turnOnRGB() {
+  fill_solid(leds, NUM_LEDS, CRGB::Blue);  // 광고 중엔 Blue
+  FastLED.setBrightness(128);              // 50%
+  FastLED.show();
+}
+
+void turnOffRGB() {
+  fill_solid(leds, NUM_LEDS, CRGB::Black);
+  FastLED.show();
+}
+
+// ===== BLE 흐름 =====
 void startAdvertising() {
   BLE.setLocalName("BLE-TEST");
   BLE.setAdvertisedService(authService);
@@ -60,6 +77,7 @@ void startAdvertising() {
   isAdvertising = true;
   digitalWrite(LED_PIN, HIGH);
   Serial.println("Station advertising...");
+  turnOnRGB();
 }
 
 void stopAdvertising() {
@@ -67,6 +85,7 @@ void stopAdvertising() {
   isAdvertising = false;
   digitalWrite(LED_PIN, LOW);
   Serial.println("Advertising stopped");
+  turnOffRGB();
 }
 
 void handleIdleState() {
@@ -139,18 +158,22 @@ void handleConnectedState() {
     stopAdvertising();
     state = IDLE;
   }
-  // 연결 유지 중 처리 영역
 }
 
 void setup() {
   Serial.begin(9600);
-  pinMode(DOCK_PIN, INPUT);
+  pinMode(DOCK_PIN, INPUT);           // 외부에서 풀다운 저항 사용
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
+
+  FastLED.addLeds<WS2812, RGB_PIN, GRB>(leds, NUM_LEDS);
+  turnOffRGB();
+
   if (!BLE.begin()) {
     Serial.println("BLE init failed");
     while (1);
   }
+
   authService.addCharacteristic(nonceChar);
   authService.addCharacteristic(tokenChar);
 
