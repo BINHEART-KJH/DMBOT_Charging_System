@@ -16,15 +16,20 @@ BLECharacteristic tokenChar("2A2A", BLEWrite, 40);
 String currentNonce = "";
 
 BLEDevice central;
-bool isAdvertising = false;
 bool gotAuth = false;
 unsigned long connectedTime = 0;
 
 // ===== LED =====
-const int LED_PIN = LED_BUILTIN;
-#define RGB_PIN     21
-#define NUM_LEDS    10
+#define LED_PIN    LED_BUILTIN
+#define RGB_PIN    21
+#define NUM_LEDS   10
 CRGB leds[NUM_LEDS];
+
+// 숨쉬기 애니메이션 변수
+uint8_t breathBrightness = 0;
+int breathDirection = 1;
+unsigned long lastBreathUpdate = 0;
+const int breathDelay = 8;  // 숨쉬기 속도 더 빠르게 조정
 
 // ===== 유틸 =====
 uint32_t crc32(const uint8_t *data, size_t length) {
@@ -56,9 +61,22 @@ bool isValidToken(const String &token) {
   return token.equalsIgnoreCase(generateToken(currentNonce, SECRET_KEY));
 }
 
-void turnOnRGB() {
-  fill_solid(leds, NUM_LEDS, CRGB::Blue);  // 광고 중엔 Blue
-  FastLED.setBrightness(128);              // 50%
+void updateBreathEffect(CRGB color) {
+  unsigned long now = millis();
+  if (now - lastBreathUpdate >= breathDelay) {
+    breathBrightness += breathDirection;
+    if (breathBrightness == 0 || breathBrightness == 255)
+      breathDirection *= -1;
+    fill_solid(leds, NUM_LEDS, color);
+    FastLED.setBrightness(breathBrightness);
+    FastLED.show();
+    lastBreathUpdate = now;
+  }
+}
+
+void turnRGB(CRGB color, uint8_t brightness) {
+  fill_solid(leds, NUM_LEDS, color);
+  FastLED.setBrightness(brightness);
   FastLED.show();
 }
 
@@ -69,33 +87,31 @@ void turnOffRGB() {
 
 // ===== BLE 흐름 =====
 void startAdvertising() {
-  BLE.setLocalName("BLE-TEST");
+  BLE.setLocalName("DMBOT-STATION");
   BLE.setAdvertisedService(authService);
   BLE.addService(authService);
   nonceChar.setValue("WAIT");
   BLE.advertise();
-  isAdvertising = true;
-  digitalWrite(LED_PIN, HIGH);
   Serial.println("Station advertising...");
-  turnOnRGB();
 }
 
 void stopAdvertising() {
   BLE.stopAdvertise();
-  isAdvertising = false;
-  digitalWrite(LED_PIN, LOW);
   Serial.println("Advertising stopped");
-  turnOffRGB();
 }
 
 void handleIdleState() {
   if (digitalRead(DOCK_PIN) == HIGH) {
     startAdvertising();
     state = ADVERTISING;
+  } else {
+    // 광고 OFF 상태에서 노란색 숨쉬기 효과
+    updateBreathEffect(CRGB::Yellow);
   }
 }
 
 void handleAdvertisingState() {
+  updateBreathEffect(CRGB::Blue);
   if (digitalRead(DOCK_PIN) == LOW) {
     stopAdvertising();
     state = IDLE;
@@ -111,30 +127,32 @@ void handleAdvertisingState() {
       incoming.disconnect();
       return;
     }
+
     central = incoming;
     currentNonce = generateNonce();
     nonceChar.setValue(currentNonce.c_str());
 
     gotAuth = false;
     connectedTime = millis();
-    digitalWrite(LED_PIN, LOW);
     state = WAIT_AUTH;
   }
 }
 
 void handleWaitAuthState() {
+  updateBreathEffect(CRGB::Green);
+
   if (!central.connected()) {
     Serial.println("Disconnected before auth");
     stopAdvertising();
     state = IDLE;
     return;
   }
+
   if (tokenChar.written()) {
     String token = String((const char *)tokenChar.value(), tokenChar.valueLength());
     if (isValidToken(token)) {
       Serial.println("Auth Success");
       gotAuth = true;
-      digitalWrite(LED_PIN, LOW);
       state = CONNECTED;
     } else {
       Serial.println("Auth Failed → Disconnect");
@@ -144,6 +162,7 @@ void handleWaitAuthState() {
     }
     return;
   }
+
   if (millis() - connectedTime > AUTH_TIMEOUT_MS) {
     Serial.println("Auth timeout → Disconnect");
     central.disconnect();
@@ -153,6 +172,7 @@ void handleWaitAuthState() {
 }
 
 void handleConnectedState() {
+  turnRGB(CRGB::Green, 255); // 초록색 100% ON
   if (!central.connected()) {
     Serial.println("Disconnected");
     stopAdvertising();
@@ -162,7 +182,7 @@ void handleConnectedState() {
 
 void setup() {
   Serial.begin(9600);
-  pinMode(DOCK_PIN, INPUT);           // 외부에서 풀다운 저항 사용
+  pinMode(DOCK_PIN, INPUT);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
