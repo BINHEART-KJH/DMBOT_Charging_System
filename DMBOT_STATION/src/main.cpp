@@ -1,4 +1,4 @@
-/*#include <ArduinoBLE.h>
+#include <ArduinoBLE.h>
 #include <FastLED.h>
 
 enum BLEState
@@ -305,8 +305,8 @@ void loop()
     break;
   }
 }
-  */
-
+  
+/*
   #include <ArduinoBLE.h>
 #include <FastLED.h>
 
@@ -570,4 +570,4 @@ void loop() {
       }
       break;
   }
-}
+}*/
