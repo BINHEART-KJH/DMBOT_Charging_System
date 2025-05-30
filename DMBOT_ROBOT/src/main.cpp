@@ -1,3 +1,4 @@
+// ================= Robot (Central) =================
 #include <ArduinoBLE.h>
 
 const char *TARGET_NAME = "DMBOT-STATION";
@@ -16,11 +17,11 @@ const int BATTERY_READY_PIN = 4;
 const int LED_PIN = LED_BUILTIN;
 
 bool connected = false;
-String currentNonce = "";
-unsigned long lastBlink = 0;
 bool ledState = false;
+unsigned long lastBlink = 0;
+String currentNonce = "";
 
-// ===================== Utility =====================
+// ================= Utility =================
 uint32_t crc32(const uint8_t *data, size_t length) {
   uint32_t crc = 0xFFFFFFFF;
   for (size_t i = 0; i < length; i++) {
@@ -40,7 +41,6 @@ String generateToken(const String &nonce, const char *key) {
   return String(buf);
 }
 
-// ===================== Setup =====================
 void setup() {
   Serial.begin(9600);
   pinMode(LED_PIN, OUTPUT);
@@ -55,20 +55,24 @@ void setup() {
   Serial.println("✅ Robot BLE Central Ready");
 }
 
-// ===================== Loop =====================
 void loop() {
   BLE.poll();
 
   if (!connected) {
-    // 스캔 중일 때도 BATTERY_READY는 반드시 LOW
+    // LED blink every 1s in scanning mode
+    if (millis() - lastBlink >= 1000) {
+      ledState = !ledState;
+      digitalWrite(LED_PIN, ledState);
+      lastBlink = millis();
+    }
+
     digitalWrite(BATTERY_READY_PIN, LOW);
 
-    Serial.println("🔍 Scanning...");
     BLE.scan();
     BLEDevice found;
     unsigned long scanStart = millis();
 
-    while (millis() - scanStart < 5000) {
+    while (millis() - scanStart < 3000) {
       found = BLE.available();
       if (found && found.localName() == TARGET_NAME) {
         BLE.stopScan();
@@ -78,6 +82,7 @@ void loop() {
 
         if (peripheral.connect()) {
           Serial.println("🔗 Connected");
+
           if (peripheral.discoverAttributes()) {
             nonceChar = peripheral.characteristic(NONCE_UUID);
             tokenChar = peripheral.characteristic(TOKEN_UUID);
@@ -89,45 +94,45 @@ void loop() {
                 currentNonce = String(buffer);
                 Serial.println("📥 Nonce: " + currentNonce);
                 String token = generateToken(currentNonce, SECRET_KEY);
+
                 if (tokenChar.writeValue(token.c_str())) {
-                  Serial.println("📤 Sent token: " + token);
+                  Serial.println("📤 Token Sent");
                   connected = true;
                   digitalWrite(LED_PIN, HIGH);
                 } else {
-                  Serial.println("❌ Token write failed");
+                  Serial.println("❌ Token Write Failed");
                   peripheral.disconnect();
                 }
               } else {
-                Serial.println("❌ Nonce read failed");
+                Serial.println("❌ Nonce Read Failed");
                 peripheral.disconnect();
               }
             } else {
-              Serial.println("❌ Characteristics missing");
+              Serial.println("❌ Characteristics Not Found");
               peripheral.disconnect();
             }
           } else {
-            Serial.println("❌ Discover failed");
+            Serial.println("❌ Discover Failed");
             peripheral.disconnect();
           }
         } else {
-          Serial.println("❌ Connect failed");
+          Serial.println("❌ Connect Failed");
         }
         break;
       }
     }
-
     BLE.stopScan();
-  }
-  else {
+  } else {
+    // Handle disconnect
     if (!peripheral.connected()) {
       Serial.println("❌ Disconnected");
       connected = false;
       digitalWrite(LED_PIN, LOW);
-      digitalWrite(BATTERY_READY_PIN, LOW);  // 반드시 릴레이 OFF
+      digitalWrite(BATTERY_READY_PIN, LOW);
       return;
     }
 
-    // 연결 유지 시 상태 체크
+    // Maintain connection and update BATTERY_READY
     if (chargerStateChar && chargerStateChar.canRead()) {
       char buffer[5] = {0};
       chargerStateChar.readValue((uint8_t*)buffer, sizeof(buffer) - 1);
@@ -137,14 +142,7 @@ void loop() {
         digitalWrite(BATTERY_READY_PIN, LOW);
       }
     } else {
-      digitalWrite(BATTERY_READY_PIN, LOW);  // 읽기 실패 시에도 안전하게 OFF
+      digitalWrite(BATTERY_READY_PIN, LOW);
     }
-  }
-
-  // 깜빡이 효과 (연결 안 된 경우)
-  if (!connected && millis() - lastBlink >= 500) {
-    ledState = !ledState;
-    digitalWrite(LED_PIN, ledState);
-    lastBlink = millis();
   }
 }
