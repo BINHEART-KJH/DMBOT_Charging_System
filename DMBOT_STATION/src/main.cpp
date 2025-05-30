@@ -307,7 +307,7 @@ void loop()
 }
   */
 
-  #include <ArduinoBLE.h>
+#include <ArduinoBLE.h>
 #include <FastLED.h>
 
 enum BLEState { IDLE, ADVERTISING, WAIT_AUTH, CONNECTED };
