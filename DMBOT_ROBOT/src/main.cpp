@@ -1,148 +1,216 @@
 // ================================
-// ✅ Robot (Central) with GATT Discovery Wait + Battery_ready Relay Control
+// ✅ Station (Peripheral) 최종 안정화 버전
 // ================================
 #include <ArduinoBLE.h>
 
-const char* targetLocalName = "DM-STATION";
-const int RSSI_THRESHOLD = -70;
+enum BLEState {
+  IDLE,
+  ADVERTISING,
+  WAIT_AUTH,
+  CONNECTED
+};
+BLEState state = IDLE;
+
+const int DOCKING_CHECK_PIN = 8;
+const int RELAY_PIN = 7;
 const int LED_PIN = LED_BUILTIN;
-const int BATTERY_READY_PIN = 4;  // D4
+
 const char* SECRET_KEY = "DM_System_key";
+const unsigned long AUTH_TIMEOUT_MS = 5000;
+const unsigned long RELAY_HOLD_DELAY_MS = 10000;
 
-bool isConnected = false;
+BLEDevice central;
+String currentNonce = "";
+bool gotAuth = false;
+unsigned long authStartTime = 0;
+unsigned long connectedTime = 0;
+bool relayOn = false;
+
 unsigned long lastBlinkTime = 0;
-bool ledState = false;
-BLEDevice connectedPeripheral;
+bool ledBlinkState = false;
 
+BLEService authService("180A");
+BLECharacteristic nonceChar("2A29", BLERead, 20);
+BLECharacteristic tokenChar("2A2A", BLEWrite, 40);
+BLECharacteristic chargerStateChar("2A2C", BLERead, 10);
+
+void generateNonce();
 uint32_t calculateCRC32(const String& data);
 
-void setup() {
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(BATTERY_READY_PIN, OUTPUT);
+void resetBLE() {
+  BLE.stopAdvertise();
+  if (central && central.connected()) {
+    central.disconnect();
+    Serial.println("🔌 Central disconnected due to docking off.");
+  }
+  BLE.end();
+  delay(100);
+  if (!BLE.begin()) {
+    Serial.println("❌ BLE re-init failed!");
+    while (1);
+  }
+  BLE.setLocalName("DM-STATION");
+  BLE.setDeviceName("DM-STATION");
+  BLE.setAdvertisedService(authService);
+  authService.addCharacteristic(nonceChar);
+  authService.addCharacteristic(tokenChar);
+  authService.addCharacteristic(chargerStateChar);
+  BLE.addService(authService);
+  nonceChar.writeValue("waiting");
+  chargerStateChar.writeValue("OFF");
+  state = IDLE;
+  gotAuth = false;
+  digitalWrite(RELAY_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
-  digitalWrite(BATTERY_READY_PIN, LOW);
+  relayOn = false;
+  Serial.println("🔄 BLE reset complete.");
+}
+
+void setup() {
+  pinMode(DOCKING_CHECK_PIN, INPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
+  digitalWrite(LED_PIN, LOW);
 
   Serial.begin(115200);
   if (!BLE.begin()) {
     Serial.println("❌ BLE init failed!");
     while (1);
   }
-  BLE.scan();
-  Serial.println("🔍 Scanning started...");
+
+  BLE.setLocalName("DM-STATION");
+  BLE.setDeviceName("DM-STATION");
+  BLE.setAdvertisedService(authService);
+  authService.addCharacteristic(nonceChar);
+  authService.addCharacteristic(tokenChar);
+  authService.addCharacteristic(chargerStateChar);
+  BLE.addService(authService);
+  nonceChar.writeValue("waiting");
+  chargerStateChar.writeValue("OFF");
+
+  tokenChar.setEventHandler(BLEWritten, [](BLEDevice central, BLECharacteristic characteristic) {
+    int len = characteristic.valueLength();
+    String receivedToken = "";
+    for (int i = 0; i < len; i++) {
+      receivedToken += (char)characteristic.value()[i];
+    }
+    String data = SECRET_KEY + currentNonce;
+    uint32_t expectedCRC = calculateCRC32(data);
+    uint32_t receivedCRC = strtoul(receivedToken.c_str(), NULL, 16);
+
+    if (receivedCRC == expectedCRC) {
+      gotAuth = true;
+      Serial.println("✅ Auth success");
+    } else {
+      Serial.println("❌ Auth failed. Disconnecting...");
+      central.disconnect();
+    }
+  });
 }
 
 void loop() {
-  if (!isConnected) {
+  BLE.poll();
+  bool docking = digitalRead(DOCKING_CHECK_PIN);
+
+  if (docking == LOW && state != IDLE) {
+    Serial.println("⚠️ Docking check LOW. Forcing BLE reset.");
+    resetBLE();
+    return;
+  }
+
+  if (state == ADVERTISING && (!central || !central.connected())) {
     if (millis() - lastBlinkTime >= 500) {
-      ledState = !ledState;
-      digitalWrite(LED_PIN, ledState);
+      ledBlinkState = !ledBlinkState;
+      digitalWrite(LED_PIN, ledBlinkState);
       lastBlinkTime = millis();
     }
-
-    BLEDevice peripheral = BLE.available();
-    if (peripheral) {
-      int rssi = peripheral.rssi();
-      String name = peripheral.localName();
-
-      Serial.print("📡 Found device - Name: ");
-      Serial.print(name);
-      Serial.print(" | RSSI: ");
-      Serial.println(rssi);
-
-      if (name != targetLocalName || rssi < RSSI_THRESHOLD) {
-        Serial.println("⛔ Not target or weak RSSI. Ignored.");
-        return;
-      }
-
-      BLE.stopScan();
-      Serial.println("🔗 Connecting to Station...");
-
-      if (peripheral.connect()) {
-        Serial.println("✅ Connected to Station!");
-        connectedPeripheral = peripheral;
-        isConnected = true;
-        digitalWrite(LED_PIN, HIGH);
-
-        // GATT 서비스 탐색 안정화
-        Serial.println("🔍 Discovering attributes...");
-        bool found = false;
-        for (int i = 0; i < 20; i++) {
-          if (peripheral.discoverAttributes()) {
-            found = true;
-            break;
-          }
-          BLE.poll();
-          delay(50);
-        }
-        if (!found) {
-          Serial.println("❌ Failed to discover attributes. Disconnecting.");
-          peripheral.disconnect();
-          isConnected = false;
-          BLE.scan();
-          return;
-        }
-
-        BLECharacteristic nonceChar = peripheral.characteristic("2A29");
-        BLECharacteristic tokenChar = peripheral.characteristic("2A2A");
-
-        if (!nonceChar || !nonceChar.canRead() || !nonceChar.read()) {
-          Serial.println("❌ Failed to read nonce.");
-          peripheral.disconnect();
-          isConnected = false;
-          BLE.scan();
-          return;
-        }
-
-        String nonce = "";
-        int len = nonceChar.valueLength();
-        for (int i = 0; i < len; i++) {
-          nonce += (char)nonceChar.value()[i];
-        }
-
-        Serial.print("🔑 Nonce received: ");
-        Serial.println(nonce);
-
-        String data = String(SECRET_KEY) + nonce;
-        uint32_t crc = calculateCRC32(data);
-        char token[12];
-        sprintf(token, "%08lX", crc);
-
-        Serial.print("🧾 Sending token: ");
-        Serial.println(token);
-        tokenChar.writeValue((const uint8_t*)token, strlen(token));
-      } else {
-        Serial.println("❌ Connection failed.");
-        BLE.scan();
-      }
-    }
-  } else {
-    if (!connectedPeripheral.connected()) {
-      Serial.println("🔌 Disconnected.");
-      digitalWrite(LED_PIN, LOW);
-      digitalWrite(BATTERY_READY_PIN, LOW);
-      isConnected = false;
-      BLE.scan();
-    } else {
-      // 연결 유지 시 Battery_jumper 상태 체크
-      BLECharacteristic chargerChar = connectedPeripheral.characteristic("2A2C");
-      if (chargerChar && chargerChar.canRead()) {
-        if (chargerChar.read()) {
-          String value = "";
-          int len = chargerChar.valueLength();
-          for (int i = 0; i < len; i++) {
-            value += (char)chargerChar.value()[i];
-          }
-          value.trim();
-          if (value == "1" || value == "ON") {
-            digitalWrite(BATTERY_READY_PIN, HIGH);
-          } else {
-            digitalWrite(BATTERY_READY_PIN, LOW);
-          }
-        }
-      }
-    }
   }
-  BLE.poll();
+
+  switch (state) {
+    case IDLE:
+      if (docking == HIGH) {
+        BLE.advertise();
+        state = ADVERTISING;
+        Serial.println("📡 Advertising started");
+      }
+      break;
+
+    case ADVERTISING:
+      central = BLE.central();
+      if (central) {
+        int rssi = central.rssi();
+        Serial.print("🔗 Central connected | RSSI: ");
+        Serial.println(rssi);
+
+        if (rssi < -70) {
+          Serial.println("📉 RSSI too weak. Disconnecting...");
+          central.disconnect();
+          return;
+        }
+
+        Serial.println("🔐 Waiting for auth...");
+        generateNonce();
+        nonceChar.writeValue(currentNonce.c_str());
+        chargerStateChar.writeValue("OFF");
+        gotAuth = false;
+        authStartTime = millis();
+        digitalWrite(LED_PIN, LOW);
+        state = WAIT_AUTH;
+      }
+      break;
+
+    case WAIT_AUTH:
+      if (!central.connected()) {
+        Serial.println("❌ Disconnected during auth");
+        digitalWrite(RELAY_PIN, LOW);
+        digitalWrite(LED_PIN, LOW);
+        chargerStateChar.writeValue("OFF");
+        relayOn = false;
+        state = ADVERTISING;
+        break;
+      }
+
+      if (gotAuth) {
+        Serial.println("🔒 Authenticated. Connection secured.");
+        connectedTime = millis();
+        digitalWrite(LED_PIN, HIGH);
+        state = CONNECTED;
+      } else if (millis() - authStartTime > AUTH_TIMEOUT_MS) {
+        Serial.println("⏱ Auth timeout. Disconnecting.");
+        central.disconnect();
+        state = ADVERTISING;
+      }
+      break;
+
+    case CONNECTED:
+      if (!central.connected()) {
+        Serial.println("🔌 Disconnected.");
+        digitalWrite(RELAY_PIN, LOW);
+        digitalWrite(LED_PIN, LOW);
+        chargerStateChar.writeValue("OFF");
+        relayOn = false;
+        state = ADVERTISING;
+      } else {
+        if (!relayOn && (millis() - connectedTime >= RELAY_HOLD_DELAY_MS)) {
+          digitalWrite(RELAY_PIN, HIGH);
+          chargerStateChar.writeValue("ON");
+          relayOn = true;
+          Serial.println("⚡ Relay ON after 10s hold");
+        }
+      }
+      break;
+  }
+}
+
+void generateNonce() {
+  currentNonce = "";
+  for (int i = 0; i < 8; i++) {
+    char c = random(0, 16);
+    currentNonce += String(c, HEX);
+  }
+  Serial.print("🔑 Nonce generated: ");
+  Serial.println(currentNonce);
 }
 
 uint32_t calculateCRC32(const String& data) {
