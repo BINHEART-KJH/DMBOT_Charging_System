@@ -1,7 +1,8 @@
 // ================================
-// ✅ Station (Peripheral) with RSSI Check + GATT Auth + Docking Reset + LED Blink + Charger State Characteristic + Relay Hold Delay
+// ✅ Station (Peripheral) + FastLED 구조 병합 (LED 제어는 아직 미사용)
 // ================================
 #include <ArduinoBLE.h>
+#include <FastLED.h>
 
 enum BLEState {
   IDLE,
@@ -10,6 +11,30 @@ enum BLEState {
   CONNECTED
 };
 BLEState state = IDLE;
+
+// -------- FastLED 설정 --------
+#define DATA_PIN    21
+#define NUM_LEDS    10
+CRGB leds[NUM_LEDS];
+
+const CRGB colorMap[16] = {
+  CRGB::Black,
+  CRGB::Red, CRGB::Orange, CRGB::Yellow, CRGB::Green, CRGB::Blue,
+  CRGB(75,0,130), CRGB(148,0,211), CRGB::Cyan, CRGB::Magenta,
+  CRGB::Pink, CRGB::White, CRGB::Lime, CRGB::Teal, CRGB(255,191,0),
+  CRGB::Black
+};
+
+const char* colorNames[16] = {
+  "Off","Red","Orange","Yellow","Green","Blue",
+  "Indigo","Violet","Cyan","Magenta",
+  "Pink","White","Lime","Teal","Amber","Rainbow"
+};
+
+uint8_t currentColorIdx   = 1;   // 기본 Red
+uint8_t brightnessPercent = 50;  // 기본 50%
+
+// ---------------------------------
 
 const int DOCKING_CHECK_PIN = 8;
 const int RELAY_PIN = 7;
@@ -33,6 +58,66 @@ BLEService authService("180A");
 BLECharacteristic nonceChar("2A29", BLERead, 20);
 BLECharacteristic tokenChar("2A2A", BLEWrite, 40);
 BLECharacteristic chargerStateChar("2A2C", BLERead, 10);
+
+// 함수: 색상 및 밝기 설정 (아직 호출 X)
+void setColorBrightness(uint8_t idx, uint8_t briPct) {
+  uint8_t b = map(briPct, 0, 100, 0, 255);
+  FastLED.setBrightness(b);
+  if (idx >= 1 && idx <= 14) {
+    fill_solid(leds, NUM_LEDS, colorMap[idx]);
+  } else if (idx == 15) {
+    fill_rainbow(leds, NUM_LEDS, 0, 255 / NUM_LEDS);
+  } else {
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+  }
+  FastLED.show();
+}
+
+void breathingEffect(uint8_t colorIdx, unsigned long intervalMs = 2500) {
+  static unsigned long breathStart = 0;
+  float progress = (millis() - breathStart) / (float)intervalMs * 2.0 * PI;  // 0~2π
+  uint8_t b = (sin(progress) + 1.0) * 127.5;  // 0~255
+
+  FastLED.setBrightness(b);
+  if (colorIdx >= 1 && colorIdx <= 14)
+    fill_solid(leds, NUM_LEDS, colorMap[colorIdx]);
+  else if (colorIdx == 15)
+    fill_rainbow(leds, NUM_LEDS, 0, 255 / NUM_LEDS);
+  else
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+  FastLED.show();
+}
+
+void updateLEDStatus(BLEState state) {
+  static unsigned long prevMillis = 0;
+  static bool blinkState = false;
+
+  switch (state) {
+    case IDLE:
+      breathingEffect(3);  // Yellow
+      break;
+
+    case ADVERTISING:
+      breathingEffect(5);  // Blue
+      break;
+
+    case WAIT_AUTH:
+      if (millis() - prevMillis >= 300) {
+        blinkState = !blinkState;
+        FastLED.setBrightness(blinkState ? 255 : 0);
+        fill_solid(leds, NUM_LEDS, colorMap[5]);  // Blue
+        FastLED.show();
+        prevMillis = millis();
+      }
+      break;
+
+    case CONNECTED:
+      FastLED.setBrightness(255);
+      fill_solid(leds, NUM_LEDS, colorMap[4]);  // Green
+      FastLED.show();
+      break;
+  }
+}
 
 void generateNonce();
 uint32_t calculateCRC32(const String& data);
@@ -74,6 +159,9 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
 
   Serial.begin(115200);
+
+  FastLED.addLeds<WS2812, DATA_PIN, GRB>(leds, NUM_LEDS);
+
   if (!BLE.begin()) {
     Serial.println("❌ BLE init failed!");
     while (1);
@@ -119,6 +207,9 @@ void loop() {
     return;
   }
 
+    updateLEDStatus(state);  // ✅ 상태에 따라 LED 처리
+
+
   if (state == ADVERTISING && (!central || !central.connected())) {
     if (millis() - lastBlinkTime >= 500) {
       ledBlinkState = !ledBlinkState;
@@ -129,6 +220,7 @@ void loop() {
 
   switch (state) {
     case IDLE:
+        breathingEffect(currentColorIdx);  // 🌬️ 숨쉬기 효과 한 줄로 표현
       if (docking == HIGH) {
         BLE.advertise();
         state = ADVERTISING;
