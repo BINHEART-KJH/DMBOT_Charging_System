@@ -1,8 +1,9 @@
-/*#include <ArduinoBLE.h>
-#include <FastLED.h>
+// ================================
+// ✅ Station (Peripheral) with RSSI Check + GATT Auth + Docking Reset + LED Blink + Charger State Characteristic + Relay Hold Delay
+// ================================
+#include <ArduinoBLE.h>
 
-enum BLEState
-{
+enum BLEState {
   IDLE,
   ADVERTISING,
   WAIT_AUTH,
@@ -10,564 +11,218 @@ enum BLEState
 };
 BLEState state = IDLE;
 
-const int DOCK_PIN = 8;
+const int DOCKING_CHECK_PIN = 8;
 const int RELAY_PIN = 7;
+const int LED_PIN = LED_BUILTIN;
 
-const int RSSI_THRESHOLD = -500;
-const int AUTH_TIMEOUT_MS = 5000;
-const unsigned long RELAY_HOLD_MS = 10000;
-const char *SECRET_KEY = "DM_System_key";
+const char* SECRET_KEY = "DM_System_key";
+const unsigned long AUTH_TIMEOUT_MS = 5000;
+const unsigned long RELAY_HOLD_DELAY_MS = 10000;
+
+BLEDevice central;
+String currentNonce = "";
+bool gotAuth = false;
+unsigned long authStartTime = 0;
+unsigned long connectedTime = 0;
+bool relayOn = false;
+
+unsigned long lastBlinkTime = 0;
+bool ledBlinkState = false;
 
 BLEService authService("180A");
 BLECharacteristic nonceChar("2A29", BLERead, 20);
 BLECharacteristic tokenChar("2A2A", BLEWrite, 40);
 BLECharacteristic chargerStateChar("2A2C", BLERead, 10);
 
-BLEDevice central;
-bool gotAuth = false;
-String currentNonce = "";
-unsigned long connectedTime = 0;
-unsigned long relayStartTime = 0;
-bool relayOn = false;
+void generateNonce();
+uint32_t calculateCRC32(const String& data);
 
-#define RGB_PIN 21
-#define NUM_LEDS 10
-CRGB leds[NUM_LEDS];
-
-#define LED_PIN LED_BUILTIN
-bool ledState = false;
-unsigned long lastLedBlink = 0;
-
-uint8_t breathBrightness = 0;
-int breathDirection = 1;
-unsigned long lastBreathUpdate = 0;
-const int breathInterval = 8;
-
-// ===== CRC32 토큰 생성 =====
-uint32_t crc32(const uint8_t *data, size_t len)
-{
-  uint32_t crc = 0xFFFFFFFF;
-  for (size_t i = 0; i < len; i++)
-  {
-    crc ^= data[i];
-    for (int j = 0; j < 8; j++)
-    {
-      crc = (crc & 1) ? (crc >> 1) ^ 0xEDB88320 : (crc >> 1);
-    }
-  }
-  return ~crc;
-}
-
-String generateNonce()
-{
-  char buffer[7];
-  for (int i = 0; i < 6; i++)
-    buffer[i] = random(33, 126);
-  buffer[6] = '\0';
-  return String(buffer);
-}
-
-String generateToken(const String &nonce, const char *key)
-{
-  String input = nonce + key;
-  uint32_t token = crc32((const uint8_t *)input.c_str(), input.length());
-  char buf[9];
-  sprintf(buf, "%08X", token);
-  return String(buf);
-}
-
-bool isValidToken(const String &token)
-{
-  return token.equalsIgnoreCase(generateToken(currentNonce, SECRET_KEY));
-}
-
-// ===== RGB LED 제어 =====
-void updateBreathingRGB(CRGB baseColor)
-{
-  unsigned long now = millis();
-  if (now - lastBreathUpdate >= breathInterval)
-  {
-    breathBrightness += breathDirection;
-    if (breathBrightness == 0 || breathBrightness == 255)
-      breathDirection *= -1;
-    fill_solid(leds, NUM_LEDS, baseColor);
-    FastLED.setBrightness(breathBrightness);
-    FastLED.show();
-    lastBreathUpdate = now;
-  }
-}
-
-void updateFixedRGB(CRGB color, uint8_t brightness = 255)
-{
-  fill_solid(leds, NUM_LEDS, color);
-  FastLED.setBrightness(brightness);
-  FastLED.show();
-}
-
-void turnOffRGB()
-{
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
-  FastLED.show();
-}
-
-void toggleLED()
-{
-  if (millis() - lastLedBlink >= 1000)
-  {
-    ledState = !ledState;
-    digitalWrite(LED_PIN, ledState);
-    lastLedBlink = millis();
-  }
-}
-
-// ===== BLE 제어 =====
-void startAdvertising()
-{
-  BLE.setLocalName("DMBOT-STATION");
-  BLE.setAdvertisedService(authService);
-  BLE.addService(authService);
-  nonceChar.setValue("WAIT");
-  BLE.advertise();
-  Serial.println("📡 Advertising started");
-}
-
-void stopAdvertising()
-{
+void resetBLE() {
   BLE.stopAdvertise();
-  Serial.println("🛑 Advertising stopped");
-}
-
-// ===== SETUP =====
-void setup()
-{
-  Serial.begin(9600);
-  pinMode(DOCK_PIN, INPUT);
-  pinMode(RELAY_PIN, OUTPUT);
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);
-  digitalWrite(LED_PIN, LOW);
-
-  FastLED.addLeds<WS2812, RGB_PIN, GRB>(leds, NUM_LEDS);
-  turnOffRGB();
-
-  if (!BLE.begin())
-  {
-    Serial.println("BLE init failed");
-    while (1)
-      ;
+  if (central && central.connected()) {
+    central.disconnect();
+    Serial.println("🔌 Central disconnected due to docking off.");
   }
-
+  BLE.end();
+  delay(100);
+  if (!BLE.begin()) {
+    Serial.println("❌ BLE re-init failed!");
+    while (1);
+  }
+  BLE.setLocalName("DM-STATION");
+  BLE.setDeviceName("DM-STATION");
+  BLE.setAdvertisedService(authService);
   authService.addCharacteristic(nonceChar);
   authService.addCharacteristic(tokenChar);
   authService.addCharacteristic(chargerStateChar);
-
-  if (digitalRead(DOCK_PIN) == HIGH)
-  {
-    startAdvertising();
-    state = ADVERTISING;
-  }
-}
-
-// ===== LOOP =====
-void loop()
-{
-  BLE.poll();
-
-  switch (state)
-  {
-  case IDLE:
-    if (digitalRead(DOCK_PIN) == HIGH)
-    {
-      startAdvertising();
-      state = ADVERTISING;
-    }
-    else
-    {
-      digitalWrite(LED_PIN, LOW);
-      updateBreathingRGB(CRGB::Yellow);
-    }
-    break;
-
-  case ADVERTISING:
-    toggleLED();
-    updateBreathingRGB(CRGB::Blue);
-
-    if (digitalRead(DOCK_PIN) == LOW)
-    {
-      stopAdvertising();
-      state = IDLE;
-    }
-    else
-    {
-      central = BLE.central();
-      if (central)
-      {
-        Serial.print("🔌 Connected to: ");
-        Serial.println(central.address());
-        int rssi = central.rssi();
-        Serial.print("📶 RSSI: ");
-        Serial.println(rssi);
-        if (rssi < RSSI_THRESHOLD)
-        {
-          Serial.println("❌ RSSI too low, disconnecting");
-          central.disconnect();
-          break;
-        }
-
-        currentNonce = generateNonce();
-        nonceChar.setValue(currentNonce.c_str());
-        gotAuth = false;
-        connectedTime = millis();
-        state = WAIT_AUTH;
-      }
-    }
-    break;
-
-  case WAIT_AUTH:
-    toggleLED();
-    updateBreathingRGB(CRGB::Green);
-
-    if (digitalRead(DOCK_PIN) == LOW)
-    {
-      Serial.println("⚠️ Docking OFF → Disconnect");
-      if (central.connected())
-        central.disconnect();
-      stopAdvertising();
-      state = IDLE;
-      break;
-    }
-
-    if (!central.connected())
-    {
-      Serial.println("❌ Disconnected before auth");
-      stopAdvertising();
-      state = IDLE;
-      break;
-    }
-
-    if (tokenChar.written())
-    {
-      String token = String((const char *)tokenChar.value(), tokenChar.valueLength());
-      if (isValidToken(token))
-      {
-        Serial.println("✅ Auth Success");
-        gotAuth = true;
-        digitalWrite(LED_PIN, HIGH);
-        state = CONNECTED;
-      }
-      else
-      {
-        Serial.println("❌ Auth Failed → Disconnect");
-        central.disconnect();
-        stopAdvertising();
-        state = IDLE;
-      }
-    }
-    else if (millis() - connectedTime > AUTH_TIMEOUT_MS)
-    {
-      Serial.println("⏳ Auth timeout → Disconnect");
-      central.disconnect();
-      stopAdvertising();
-      state = IDLE;
-    }
-    break;
-
-  case CONNECTED:
-    updateFixedRGB(CRGB::Green);
-    digitalWrite(LED_PIN, HIGH);
-
-    if (!central.connected() || digitalRead(DOCK_PIN) == LOW)
-    {
-      Serial.println("🔌 Disconnected");
-      digitalWrite(RELAY_PIN, LOW);
-      chargerStateChar.setValue("0");
-      relayOn = false;
-      relayStartTime = 0;
-      stopAdvertising();
-      state = IDLE;
-      break;
-    }
-
-    // ✅ Docking 유지되기만 하면 10초 후 릴레이 ON
-    if (!relayOn)
-    {
-      if (relayStartTime == 0)
-      {
-        relayStartTime = millis();
-      }
-      else if (millis() - relayStartTime >= RELAY_HOLD_MS)
-      {
-        digitalWrite(RELAY_PIN, HIGH);
-        chargerStateChar.setValue("1");
-        relayOn = true;
-      }
-    }
-    break;
-  }
-}
-  */
-
-#include <ArduinoBLE.h>
-#include <FastLED.h>
-
-enum BLEState { IDLE, ADVERTISING, WAIT_AUTH, CONNECTED };
-BLEState state = IDLE;
-
-const int DOCK_PIN = 8;
-const int BATTERY_FULL_PIN = 5;
-const int RELAY_PIN = 7;
-
-const int RSSI_THRESHOLD = -500;
-const int AUTH_TIMEOUT_MS = 5000;
-const unsigned long RELAY_HOLD_MS = 10000;
-const char *SECRET_KEY = "DM_System_key";
-
-BLEService authService("180A");
-BLECharacteristic nonceChar("2A29", BLERead, 20);
-BLECharacteristic tokenChar("2A2A", BLEWrite, 40);
-BLECharacteristic chargerStateChar("2A2C", BLERead, 10);
-
-BLEDevice central;
-bool gotAuth = false;
-String currentNonce = "";
-unsigned long connectedTime = 0;
-unsigned long relayStartTime = 0;
-bool relayOn = false;
-
-#define RGB_PIN 21
-#define NUM_LEDS 10
-CRGB leds[NUM_LEDS];
-
-#define LED_PIN LED_BUILTIN
-bool ledState = false;
-unsigned long lastLedBlink = 0;
-
-uint8_t breathBrightness = 0;
-int breathDirection = 1;
-unsigned long lastBreathUpdate = 0;
-const int breathInterval = 8;
-
-uint32_t crc32(const uint8_t *data, size_t len) {
-  uint32_t crc = 0xFFFFFFFF;
-  for (size_t i = 0; i < len; i++) {
-    crc ^= data[i];
-    for (int j = 0; j < 8; j++)
-      crc = (crc & 1) ? (crc >> 1) ^ 0xEDB88320 : (crc >> 1);
-  }
-  return ~crc;
-}
-
-String generateNonce() {
-  char buffer[7];
-  for (int i = 0; i < 6; i++) buffer[i] = random(33, 126);
-  buffer[6] = '\0';
-  return String(buffer);
-}
-
-String generateToken(const String &nonce, const char *key) {
-  String input = nonce + key;
-  uint32_t token = crc32((const uint8_t *)input.c_str(), input.length());
-  char buf[9];
-  sprintf(buf, "%08X", token);
-  return String(buf);
-}
-
-bool isValidToken(const String &token) {
-  return token.equalsIgnoreCase(generateToken(currentNonce, SECRET_KEY));
-}
-
-void updateBreathingRGB(CRGB baseColor) {
-  unsigned long now = millis();
-  if (now - lastBreathUpdate >= breathInterval) {
-    breathBrightness += breathDirection;
-    if (breathBrightness == 0 || breathBrightness == 255)
-      breathDirection *= -1;
-    fill_solid(leds, NUM_LEDS, baseColor);
-    FastLED.setBrightness(breathBrightness);
-    FastLED.show();
-    lastBreathUpdate = now;
-  }
-}
-
-void updateFixedRGB(CRGB color, uint8_t brightness = 255) {
-  fill_solid(leds, NUM_LEDS, color);
-  FastLED.setBrightness(brightness);
-  FastLED.show();
-}
-
-void turnOffRGB() {
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
-  FastLED.show();
-}
-
-void toggleLED() {
-  if (millis() - lastLedBlink >= 1000) {
-    ledState = !ledState;
-    digitalWrite(LED_PIN, ledState);
-    lastLedBlink = millis();
-  }
-}
-
-void startAdvertising() {
-  BLE.setLocalName("DMBOT-STATION");
-  BLE.setAdvertisedService(authService);
   BLE.addService(authService);
-  nonceChar.setValue("WAIT");
-  BLE.advertise();
-  Serial.println("📡 Advertising started");
-}
-
-void stopAdvertising() {
-  BLE.stopAdvertise();
-  Serial.println("🛑 Advertising stopped");
+  nonceChar.writeValue("waiting");
+  chargerStateChar.writeValue("OFF");
+  state = IDLE;
+  gotAuth = false;
+  digitalWrite(RELAY_PIN, LOW);
+  digitalWrite(LED_PIN, LOW);
+  relayOn = false;
+  Serial.println("🔄 BLE reset complete.");
 }
 
 void setup() {
-  Serial.begin(9600);
-  pinMode(DOCK_PIN, INPUT);
-  pinMode(BATTERY_FULL_PIN, INPUT);
+  pinMode(DOCKING_CHECK_PIN, INPUT);
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
 
-  FastLED.addLeds<WS2812, RGB_PIN, GRB>(leds, NUM_LEDS);
-  turnOffRGB();
-
+  Serial.begin(115200);
   if (!BLE.begin()) {
-    Serial.println("BLE init failed");
+    Serial.println("❌ BLE init failed!");
     while (1);
   }
 
+  BLE.setLocalName("DM-STATION");
+  BLE.setDeviceName("DM-STATION");
+  BLE.setAdvertisedService(authService);
   authService.addCharacteristic(nonceChar);
   authService.addCharacteristic(tokenChar);
   authService.addCharacteristic(chargerStateChar);
+  BLE.addService(authService);
+  nonceChar.writeValue("waiting");
+  chargerStateChar.writeValue("OFF");
 
-  if (digitalRead(DOCK_PIN) == HIGH) {
-    startAdvertising();
-    state = ADVERTISING;
-  }
+  tokenChar.setEventHandler(BLEWritten, [](BLEDevice central, BLECharacteristic characteristic) {
+    int len = characteristic.valueLength();
+    String receivedToken = "";
+    for (int i = 0; i < len; i++) {
+      receivedToken += (char)characteristic.value()[i];
+    }
+    String data = SECRET_KEY + currentNonce;
+    uint32_t expectedCRC = calculateCRC32(data);
+    uint32_t receivedCRC = strtoul(receivedToken.c_str(), NULL, 16);
+
+    if (receivedCRC == expectedCRC) {
+      gotAuth = true;
+      Serial.println("✅ Auth success");
+    } else {
+      Serial.println("❌ Auth failed. Disconnecting...");
+      central.disconnect();
+    }
+  });
 }
 
 void loop() {
   BLE.poll();
+  bool docking = digitalRead(DOCKING_CHECK_PIN);
+
+  if (docking == LOW && state != IDLE) {
+    Serial.println("⚠️ Docking check LOW. Forcing BLE reset.");
+    resetBLE();
+    return;
+  }
+
+  if (state == ADVERTISING && (!central || !central.connected())) {
+    if (millis() - lastBlinkTime >= 500) {
+      ledBlinkState = !ledBlinkState;
+      digitalWrite(LED_PIN, ledBlinkState);
+      lastBlinkTime = millis();
+    }
+  }
 
   switch (state) {
     case IDLE:
-      if (digitalRead(DOCK_PIN) == HIGH) {
-        startAdvertising();
+      if (docking == HIGH) {
+        BLE.advertise();
         state = ADVERTISING;
-      } else {
-        digitalWrite(LED_PIN, LOW);
-        updateBreathingRGB(CRGB::Yellow);
+        Serial.println("📡 Advertising started");
       }
       break;
 
     case ADVERTISING:
-      toggleLED();
-      updateBreathingRGB(CRGB::Blue);
+      central = BLE.central();
+      if (central) {
+        int rssi = central.rssi();
+        Serial.print("🔗 Central connected | RSSI: ");
+        Serial.println(rssi);
 
-      if (digitalRead(DOCK_PIN) == LOW) {
-        stopAdvertising();
-        state = IDLE;
-      } else {
-        central = BLE.central();
-        if (central) {
-          Serial.print("🔌 Connected to: ");
-          Serial.println(central.address());
-          int rssi = central.rssi();
-          Serial.print("📶 RSSI: ");
-          Serial.println(rssi);
-          if (rssi < RSSI_THRESHOLD) {
-            Serial.println("❌ RSSI too low, disconnecting");
-            central.disconnect();
-            break;
-          }
-
-          currentNonce = generateNonce();
-          nonceChar.setValue(currentNonce.c_str());
-          gotAuth = false;
-          connectedTime = millis();
-          state = WAIT_AUTH;
+        if (rssi < -70) {
+          Serial.println("📉 RSSI too weak. Disconnecting...");
+          central.disconnect();
+          return;
         }
+
+        Serial.println("🔐 Waiting for auth...");
+        generateNonce();
+        nonceChar.writeValue(currentNonce.c_str());
+        chargerStateChar.writeValue("OFF");
+        gotAuth = false;
+        authStartTime = millis();
+        digitalWrite(LED_PIN, LOW);
+        state = WAIT_AUTH;
       }
       break;
 
     case WAIT_AUTH:
-      toggleLED();
-      updateBreathingRGB(CRGB::Green);
-
-      if (digitalRead(DOCK_PIN) == LOW) {
-        Serial.println("⚠️ Docking OFF → Disconnect");
-        if (central.connected()) central.disconnect();
-        stopAdvertising();
-        state = IDLE;
-        break;
-      }
-
       if (!central.connected()) {
-        Serial.println("❌ Disconnected before auth");
-        stopAdvertising();
-        state = IDLE;
+        Serial.println("❌ Disconnected during auth");
+        digitalWrite(RELAY_PIN, LOW);
+        digitalWrite(LED_PIN, LOW);
+        chargerStateChar.writeValue("OFF");
+        relayOn = false;
+        state = ADVERTISING;
         break;
       }
 
-      if (tokenChar.written()) {
-        String token = String((const char *)tokenChar.value(), tokenChar.valueLength());
-        if (isValidToken(token)) {
-          Serial.println("✅ Auth Success");
-          gotAuth = true;
-          digitalWrite(LED_PIN, HIGH);
-          state = CONNECTED;
-        } else {
-          Serial.println("❌ Auth Failed → Disconnect");
-          central.disconnect();
-          stopAdvertising();
-          state = IDLE;
-        }
-      } else if (millis() - connectedTime > AUTH_TIMEOUT_MS) {
-        Serial.println("⏳ Auth timeout → Disconnect");
+      if (gotAuth) {
+        Serial.println("🔒 Authenticated. Connection secured.");
+        connectedTime = millis();
+        digitalWrite(LED_PIN, HIGH);
+        state = CONNECTED;
+      } else if (millis() - authStartTime > AUTH_TIMEOUT_MS) {
+        Serial.println("⏱ Auth timeout. Disconnecting.");
         central.disconnect();
-        stopAdvertising();
-        state = IDLE;
+        state = ADVERTISING;
       }
       break;
 
     case CONNECTED:
-      updateFixedRGB(CRGB::Green);
-      digitalWrite(LED_PIN, HIGH);
-
-      if (!central.connected() || digitalRead(DOCK_PIN) == LOW) {
-        Serial.println("🔌 Disconnected");
+      if (!central.connected()) {
+        Serial.println("🔌 Disconnected.");
         digitalWrite(RELAY_PIN, LOW);
-        chargerStateChar.setValue("0");
+        digitalWrite(LED_PIN, LOW);
+        chargerStateChar.writeValue("OFF");
         relayOn = false;
-        relayStartTime = 0;
-        stopAdvertising();
-        state = IDLE;
-        break;
-      }
-
-      bool batteryFull = digitalRead(BATTERY_FULL_PIN) == HIGH;
-
-      if (!batteryFull) {
-        if (!relayOn) {
-          if (relayStartTime == 0) {
-            relayStartTime = millis();
-          } else if (millis() - relayStartTime >= RELAY_HOLD_MS) {
-            digitalWrite(RELAY_PIN, HIGH);
-            chargerStateChar.setValue("1");
-            relayOn = true;
-          }
-        }
+        state = ADVERTISING;
       } else {
-        relayStartTime = 0;
-        if (relayOn) {
-          digitalWrite(RELAY_PIN, LOW);
-          chargerStateChar.setValue("0");
-          relayOn = false;
+        if (!relayOn && (millis() - connectedTime >= RELAY_HOLD_DELAY_MS)) {
+          digitalWrite(RELAY_PIN, HIGH);
+          chargerStateChar.writeValue("ON");
+          relayOn = true;
+          Serial.println("⚡ Relay ON after 10s hold");
         }
       }
       break;
   }
+}
+
+void generateNonce() {
+  currentNonce = "";
+  for (int i = 0; i < 8; i++) {
+    char c = random(0, 16);
+    currentNonce += String(c, HEX);
+  }
+  Serial.print("🔑 Nonce generated: ");
+  Serial.println(currentNonce);
+}
+
+uint32_t calculateCRC32(const String& data) {
+  const uint32_t polynomial = 0xEDB88320;
+  uint32_t crc = 0xFFFFFFFF;
+  for (size_t i = 0; i < data.length(); ++i) {
+    uint8_t byte = data[i];
+    crc ^= byte;
+    for (int j = 0; j < 8; ++j) {
+      if (crc & 1) crc = (crc >> 1) ^ polynomial;
+      else crc >>= 1;
+    }
+  }
+  return ~crc;
 }
