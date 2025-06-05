@@ -1,158 +1,204 @@
 #include <ArduinoBLE.h>
+#include <SHA256.h>
+#include <mbedtls/md.h>
 
-const char* STATION_NAME = "DM-STATION";
-const char* SECRET_KEY = "DM_System_key";
+const char *SECRET_KEY = "DM_System_key";
+const char *TARGET_NAME = "DM-STATION";
+const int RSSI_THRESHOLD = -60;
 const int RELAY_PIN = 4;
 const int LED_PIN = LED_BUILTIN;
 
-BLEDevice station;
 BLECharacteristic nonceChar;
 BLECharacteristic tokenChar;
 BLECharacteristic chargerStateChar;
 
-bool connected = false;
-unsigned long lastCheckTime = 0;
-const unsigned long CHECK_INTERVAL = 1000;
+unsigned long lastReadTime = 0;
+const unsigned long READ_INTERVAL = 1000;
 
-unsigned long lastBlink = 0;
-bool ledState = false;
-
-uint32_t calculateCRC32(const String& data);
-
-void setup() {
+void setup()
+{
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
 
   Serial.begin(115200);
-  if (!BLE.begin()) {
-    Serial.println("❌ BLE init failed!");
-    while (1);
+  while (!Serial)
+    ;
+
+  if (!BLE.begin())
+  {
+    Serial.println("❌ Failed to initialize BLE!");
+    while (1)
+      ;
   }
 
-  BLE.scan();
   Serial.println("🔍 Scanning for Station...");
+  BLE.scan();
 }
 
-void loop() {
-  BLE.poll();
+String hmacSha256(const String &key, const String &message)
+{
+  unsigned char output[32];
+  mbedtls_md_context_t ctx;
+  const mbedtls_md_info_t *info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
 
-  if (!connected) {
-    // 점멸 효과
-    if (millis() - lastBlink >= 500) {
-      ledState = !ledState;
-      digitalWrite(LED_PIN, ledState);
-      lastBlink = millis();
+  mbedtls_md_init(&ctx);
+  mbedtls_md_setup(&ctx, info, 1); // 1 = HMAC
+  mbedtls_md_hmac_starts(&ctx, (const unsigned char *)key.c_str(), key.length());
+  mbedtls_md_hmac_update(&ctx, (const unsigned char *)message.c_str(), message.length());
+  mbedtls_md_hmac_finish(&ctx, output);
+  mbedtls_md_free(&ctx);
+
+  char hexStr[65];
+  for (int i = 0; i < 32; i++)
+  {
+    sprintf(hexStr + i * 2, "%02x", output[i]); // ✅ 소문자 hex 출력
+  }
+  return String(hexStr);
+}
+
+void loop()
+{
+  BLEDevice dev = BLE.available();
+
+  if (dev)
+  {
+    if (!dev.hasLocalName())
+    {
+      Serial.println("⚠️ Device has no localName");
+      return;
     }
 
-    BLEDevice peripheral = BLE.available();
-    if (peripheral && peripheral.hasLocalName()) {
-      String name = peripheral.localName();
-      int rssi = peripheral.rssi();
+    String localName = dev.localName();
+    int rssi = dev.rssi();
+    Serial.print("🔍 Found device: ");
+    Serial.print(localName);
+    Serial.print(" | RSSI: ");
+    Serial.println(rssi);
 
-      Serial.print("🔍 Found device: ");
-      Serial.print(name);
-      Serial.print(" | RSSI: ");
-      Serial.println(rssi);
-
-      if (name == STATION_NAME && rssi >= -60) {
-        Serial.println("✅ Target matched. Connecting...");
-
-        BLE.stopScan();  // ✅ 반드시 scan 중지
-
-        if (peripheral.connect()) {
-          delay(200);  // ✅ BLE stack 안정화 대기
-          Serial.println("🔗 Connected to Station");
-          station = peripheral;
-
-          if (station.discoverService("180A")) {
-            nonceChar = station.characteristic("2A29");
-            tokenChar = station.characteristic("2A2A");
-            chargerStateChar = station.characteristic("2A2C");
-
-            if (nonceChar && tokenChar && chargerStateChar && nonceChar.canRead() && tokenChar.canWrite()) {
-              nonceChar.read();
-              String nonce = "";
-              int len = nonceChar.valueLength();
-              for (int i = 0; i < len; i++) {
-                nonce += (char)nonceChar.value()[i];
-              }
-
-              String data = SECRET_KEY + nonce;
-              uint32_t crc = calculateCRC32(data);
-              char token[9];
-              sprintf(token, "%08lX", crc);
-
-              Serial.print("🔐 Sending token: ");
-              Serial.println(token);
-
-              tokenChar.writeValue(token);
-              connected = true;
-              digitalWrite(LED_PIN, HIGH);
-              lastCheckTime = millis();
-            } else {
-              Serial.println("❌ GATT characteristics not ready");
-              station.disconnect();
-              delay(500);
-              BLE.scan();
-            }
-          } else {
-            Serial.println("❌ Service discovery failed");
-            station.disconnect();
-            delay(500);
-            BLE.scan();
-          }
-        } else {
-          Serial.println("❌ Connection failed");
-          peripheral.disconnect();  // 🔁 명시적으로 해제
-          delay(1000);
-          BLE.scan();
-        }
-      }
+    if (localName != TARGET_NAME || rssi < RSSI_THRESHOLD)
+    {
+      Serial.println("⛔ Not target device or weak signal");
+      return;
     }
-  } else {
-    if (!station.connected()) {
-      Serial.println("🔌 Disconnected from Station");
-      connected = false;
-      digitalWrite(RELAY_PIN, LOW);
-      digitalWrite(LED_PIN, LOW);
+
+    Serial.println("✅ Target matched. Connecting...");
+    BLE.stopScan();
+
+    if (!dev.connect())
+    {
+      Serial.println("❌ Connection failed");
       BLE.scan();
       return;
     }
 
-    if (millis() - lastCheckTime >= CHECK_INTERVAL) {
-      chargerStateChar.read();
-      int len = chargerStateChar.valueLength();
-      String state = "";
-      for (int i = 0; i < len; i++) {
-        state += (char)chargerStateChar.value()[i];
-      }
+    Serial.println("🔗 Connected to Station");
 
-      Serial.print("⚡ Charger State: ");
-      Serial.println(state);
-
-      if (state == "ON") {
-        digitalWrite(RELAY_PIN, HIGH);
-      } else {
-        digitalWrite(RELAY_PIN, LOW);
-      }
-
-      lastCheckTime = millis();
+    if (!dev.discoverAttributes())
+    {
+      Serial.println("❌ Attribute discovery failed");
+      dev.disconnect();
+      BLE.scan();
+      return;
     }
-  }
-}
 
-uint32_t calculateCRC32(const String& data) {
-  const uint32_t polynomial = 0xEDB88320;
-  uint32_t crc = 0xFFFFFFFF;
-  for (size_t i = 0; i < data.length(); ++i) {
-    uint8_t byte = data[i];
-    crc ^= byte;
-    for (int j = 0; j < 8; ++j) {
-      if (crc & 1) crc = (crc >> 1) ^ polynomial;
-      else crc >>= 1;
+    BLEService authService = dev.service("180A");
+    if (!authService)
+    {
+      Serial.println("❌ Auth service not found");
+      dev.disconnect();
+      BLE.scan();
+      return;
     }
+
+    nonceChar = authService.characteristic("2A29");
+    tokenChar = authService.characteristic("2A2A");
+    chargerStateChar = authService.characteristic("2A2C");
+
+    if (!nonceChar || !tokenChar || !chargerStateChar)
+    {
+      Serial.println("❌ GATT characteristics not found");
+      dev.disconnect();
+      BLE.scan();
+      return;
+    }
+
+    if (!nonceChar.canRead() || !tokenChar.canWrite() || !chargerStateChar.canRead())
+    {
+      Serial.println("❌ GATT characteristic permissions incorrect");
+      dev.disconnect();
+      BLE.scan();
+      return;
+    }
+
+    String nonce = "";
+    byte buffer[32] = {0};
+    int len = nonceChar.readValue(buffer, sizeof(buffer));
+    if (len <= 0)
+    {
+      Serial.println("❌ Failed to read nonce");
+      dev.disconnect();
+      BLE.scan();
+      return;
+    }
+
+    for (int i = 0; i < len; i++)
+    {
+      nonce += (char)buffer[i];
+    }
+
+    Serial.print("🔐 Received nonce: ");
+    Serial.println(nonce);
+
+    String token = hmacSha256(SECRET_KEY, nonce);
+    Serial.print("🔐 Sending token: ");
+    Serial.println(token);
+    tokenChar.writeValue(token.c_str());
+
+    digitalWrite(LED_PIN, HIGH); // 연결 표시
+
+    while (dev.connected())
+    {
+      if (millis() - lastReadTime >= READ_INTERVAL)
+      {
+        lastReadTime = millis();
+
+        len = chargerStateChar.valueLength();
+        const uint8_t *stateData = chargerStateChar.value();
+        String state = "";
+        for (int i = 0; i < len; i++)
+        {
+          state += (char)stateData[i];
+        }
+
+        Serial.print("⚡ Charger State: ");
+        Serial.println(state);
+
+        if (state == "ON")
+        {
+          digitalWrite(RELAY_PIN, HIGH);
+        }
+        else
+        {
+          digitalWrite(RELAY_PIN, LOW);
+        }
+      }
+    }
+
+    Serial.println("🔌 Disconnected from Station");
+    digitalWrite(LED_PIN, LOW);
+    digitalWrite(RELAY_PIN, LOW);
+    BLE.scan();
   }
-  return ~crc;
+
+  // Blink LED while scanning
+  static unsigned long lastBlink = 0;
+  static bool ledState = false;
+  if (millis() - lastBlink > 500)
+  {
+    ledState = !ledState;
+    digitalWrite(LED_PIN, ledState);
+    lastBlink = millis();
+  }
 }
