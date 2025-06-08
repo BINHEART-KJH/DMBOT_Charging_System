@@ -1,4 +1,4 @@
-#include <Arduino.h>
+/*#include <Arduino.h>
 #include <ArduinoBLE.h>
 #include "modbus_slave.h"
 #include "ble_scanner.h"
@@ -33,4 +33,26 @@ void loop() {
       digitalWrite(RELAY_PIN, LOW);  // 릴레이 OFF
     }
   }
+}
+*/
+
+#include <Arduino.h>
+#include <ArduinoBLE.h>
+#include "ble_scanner.h"
+
+#define RELAY_PIN 4  // BATTERY_READY 릴레이 D4
+
+void setup() {
+  Serial.begin(9600);
+  setupBLEScanner();
+
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
+
+  Serial.println("[DEBUG] Modbus 없이 Robot 시작됨");
+  startScan();  // 부팅 시 자동 BLE 스캔 시작
+}
+
+void loop() {
+  updateBLEScanLoop();  // BLE 연결, 인증, 릴레이 제어 등 처리
 }
