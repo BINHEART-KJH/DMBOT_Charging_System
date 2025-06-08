@@ -1,13 +1,13 @@
 #include <Arduino.h>
 #include <ArduinoBLE.h>
-#include "rs485_control.h"
+#include "modbus_slave.h"
 #include "ble_scanner.h"
 
 #define RELAY_PIN 4  // D4 대신 직접 지정
 
 void setup() {
   Serial.begin(9600);
-  setupRS485();
+  setupModbus();
   setupBLEScanner();
   pinMode(RELAY_PIN, OUTPUT);  // BATTERY_READY 릴레이
   digitalWrite(RELAY_PIN, LOW);
@@ -15,19 +15,22 @@ void setup() {
 }
 
 void loop() {
-  processRS485Command();
+  updateModbus();         // RS485 명령 수신
+  updateBLEScanLoop();    // BLE 처리
 
-  if (isBLEScanRequested()) {
-    startScan();
-    clearBLECommandFlags();
+  static bool lastBLE = false;
+  bool nowBLE = modbusGetBLECmd();
+
+  if (nowBLE != lastBLE) {
+    lastBLE = nowBLE;
+    if (nowBLE) {
+      Serial.println("[MAIN] BLE 스캔 시작");
+      startScan();
+    } else {
+      Serial.println("[MAIN] BLE 스캔 중지");
+      stopScan();
+      disconnectFromStation();       // 연결 종료
+      digitalWrite(RELAY_PIN, LOW);  // 릴레이 OFF
+    }
   }
-
-   if (isBLEStopRequested()) {
-    stopScan();                    // 스캔 중지
-    disconnectFromStation();       // ✅ 실제 연결 해제
-    digitalWrite(RELAY_PIN, LOW);  // 릴레이 OFF
-    clearBLECommandFlags();
-  }
-
-  updateBLEScanLoop();
 }
