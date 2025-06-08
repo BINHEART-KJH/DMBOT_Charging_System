@@ -1,0 +1,9 @@
+{
+  "name": "Crypto",
+  "version": "0.4.0",
+  "author": "Rhys Weatherley",
+  "description": "HMAC-SHA256 minimal subset for Arduino RP2040 BLE authentication",
+  "keywords": ["crypto", "hmac", "sha256"],
+  "frameworks": "arduino",
+  "platforms": "*"
+}
