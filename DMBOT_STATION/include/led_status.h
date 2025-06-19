@@ -5,7 +5,7 @@
 #include <FastLED.h>
 
 #define LED_PIN     21
-#define NUM_LEDS    10
+#define NUM_LEDS    118
 #define BRIGHTNESS  128
 #define LED_TYPE    WS2812B
 #define COLOR_ORDER GRB
