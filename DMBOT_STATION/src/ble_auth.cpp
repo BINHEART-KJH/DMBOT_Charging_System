@@ -79,7 +79,7 @@ bool validateToken(const char *mac, const char *token)
     if (strncmp(token, expected, 64) == 0)
     {
         authenticated = true;
-        connectedTime = millis(); 
+        connectedTime = millis();
         Serial.println("[BLE] 인증 성공");
         return true;
     }
@@ -147,7 +147,7 @@ void updateBLEStateMachine()
         dockingChangeTime = millis();
         lastDockingState = currentDockingState;
     }
-    
+
     if (connected && currentDockingState == LOW &&
         millis() - dockingChangeTime >= DEBOUNCE_MS) {
         Serial.println("[BLE] 도킹 해제 → 연결 강제 해제");
@@ -251,7 +251,6 @@ void updateBLEStateMachine()
     }
 }*/
 
-// ===================== ble_auth.cpp =====================
 #include "ble_auth.h"
 #include "blacklist.h"
 #include "led_status.h"
@@ -286,42 +285,51 @@ const int DOCKING_PIN = 8;
 bool lastDockingState = LOW;
 bool isAdvertising = false;
 unsigned long dockingChangeTime = 0;
-const unsigned long DEBOUNCE_MS = 1000;
+const unsigned long DEBOUNCE_MS = 100; // ✅ 100ms로 수정
 
 const char *SECRET_KEY = "DMBOT_SECRET";
 
-void generateRandomNonce(char *out, size_t len = 16) {
-  for (size_t i = 0; i < len; i++) out[i] = 'A' + (rand() % 26);
+void generateRandomNonce(char *out, size_t len = 16)
+{
+  for (size_t i = 0; i < len; i++)
+    out[i] = 'A' + (rand() % 26);
   out[len] = '\0';
 }
 
-void generateNonce(char *outNonce) {
+void generateNonce(char *outNonce)
+{
   generateRandomNonce(outNonce);
   strcpy(currentNonce, outNonce);
   nonceChar.writeValue(currentNonce);
 }
 
-bool computeHMAC(const char *key, const char *message, char *outHex) {
+bool computeHMAC(const char *key, const char *message, char *outHex)
+{
   HMAC<SHA256> hmac((const uint8_t *)key, strlen(key));
   hmac.update((const uint8_t *)message, strlen(message));
   uint8_t result[32];
   hmac.finalize(result, sizeof(result));
-  for (int i = 0; i < 32; ++i) sprintf(outHex + i * 2, "%02x", result[i]);
+  for (int i = 0; i < 32; ++i)
+    sprintf(outHex + i * 2, "%02x", result[i]);
   outHex[64] = '\0';
   return true;
 }
 
-bool validateToken(const char *mac, const char *token) {
+bool validateToken(const char *mac, const char *token)
+{
   char expected[65];
   computeHMAC(SECRET_KEY, currentNonce, expected);
 
-  if (strncmp(token, expected, 64) == 0) {
+  if (strncmp(token, expected, 64) == 0)
+  {
     authenticated = true;
     connectedTime = millis();
     Serial.println("[BLE] 인증 성공");
     updateLEDState(LED_AUTH_SUCCESS);
     return true;
-  } else {
+  }
+  else
+  {
     Serial.println("[BLE] 인증 실패 → 블랙리스트 등록");
     updateLEDState(LED_AUTH_FAIL);
     addToBlacklist(mac);
@@ -337,15 +345,20 @@ void resetBLEState() {
   strcpy(connectedMac, "");
   authStartTime = 0;
   authTimeoutMs = AUTH_TIMEOUT_MS_NORMAL;
+  
+  // nonce 완전히 초기화
   generateNonce(currentNonce);
-  nonceChar.writeValue(currentNonce);
+  nonceChar.writeValue(currentNonce);  // 새 nonce
+  tokenChar.writeValue("");            // 이전 token 무효화
+
   digitalWrite(RELAY_PIN, LOW);
   relayOn = false;
-  Serial.println("[RELAY] 연결 해제 또는 미인증 → Relay OFF");
   updateLEDState(LED_IDLE);
+  Serial.println("[RELAY] 연결 해제 또는 미인증 → Relay OFF");
 }
 
-void setupBLE() {
+void setupBLE()
+{
   pinMode(DOCKING_PIN, INPUT);
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
@@ -356,7 +369,8 @@ void setupBLE() {
   lastDockingState = digitalRead(DOCKING_PIN);
   dockingChangeTime = millis();
 
-  if (!BLE.begin()) {
+  if (!BLE.begin())
+  {
     Serial.println("[BLE] BLE 시작 실패");
     return;
   }
@@ -374,54 +388,65 @@ void setupBLE() {
   Serial.println("[BLE] 초기화 완료");
 }
 
-void updateBLEStateMachine() {
+void updateBLEStateMachine()
+{
   BLE.poll();
   updateLEDEffect();
 
   bool currentDockingState = digitalRead(DOCKING_PIN);
-  if (currentDockingState != lastDockingState) {
+
+  // 디바운스 처리
+  if (currentDockingState != lastDockingState)
+  {
     dockingChangeTime = millis();
     lastDockingState = currentDockingState;
-    if (currentDockingState == HIGH)
-      updateLEDState(LED_DOCKED);
   }
 
-  if (connected && currentDockingState == LOW &&
-      millis() - dockingChangeTime >= DEBOUNCE_MS) {
+  // 도킹 해제 시 강제 연결 종료
+  if (connected && lastDockingState == LOW &&
+      millis() - dockingChangeTime >= DEBOUNCE_MS)
+  {
     Serial.println("[BLE] 도킹 해제 → 연결 강제 해제");
     resetBLEState();
     return;
   }
 
-  if (!connected) {
-    if (currentDockingState == HIGH && !isAdvertising &&
-        millis() - dockingChangeTime >= DEBOUNCE_MS) {
-      BLE.advertise();
-      isAdvertising = true;
-      Serial.println("[BLE] 도킹 감지됨 → 광고 시작");
-      updateLEDState(LED_ADVERTISING);
-    }
-
-    if (currentDockingState == LOW && isAdvertising &&
-        millis() - dockingChangeTime >= DEBOUNCE_MS) {
-      BLE.stopAdvertise();
-      isAdvertising = false;
-      Serial.println("[BLE] 도킹 해제됨 → 광고 중지");
-      updateLEDState(LED_IDLE);
-    }
+  // 광고 시작 조건
+  if (!connected && !isAdvertising &&
+      lastDockingState == HIGH && millis() - dockingChangeTime >= DEBOUNCE_MS)
+  {
+    BLE.advertise();
+    isAdvertising = true;
+    Serial.println("[BLE] 도킹 감지됨 → 광고 시작");
+    updateLEDState(LED_ADVERTISING);
   }
 
-  if (!connected) {
+  // 광고 중지 조건
+  if (isAdvertising && lastDockingState == LOW &&
+      millis() - dockingChangeTime >= DEBOUNCE_MS)
+  {
+    BLE.stopAdvertise();
+    isAdvertising = false;
+    Serial.println("[BLE] 도킹 해제됨 → 광고 중지");
+    updateLEDState(LED_IDLE);
+  }
+
+  if (!connected)
+  {
     BLEDevice centralDevice = BLE.central();
-    if (centralDevice && centralDevice.connected()) {
+    if (centralDevice && centralDevice.connected())
+    {
       const char *mac = centralDevice.address().c_str();
 
-      if (isBlacklisted(mac)) {
+      if (isBlacklisted(mac))
+      {
         Serial.print("[BLE] 블랙리스트 MAC 연결 시도: ");
         Serial.println(mac);
         updateLEDState(LED_BLACKLIST);
         authTimeoutMs = AUTH_TIMEOUT_MS_BLACKLIST;
-      } else {
+      }
+      else
+      {
         authTimeoutMs = AUTH_TIMEOUT_MS_NORMAL;
       }
 
@@ -439,14 +464,16 @@ void updateBLEStateMachine() {
     }
   }
 
-  if (connected && central && !central.connected()) {
+  if (connected && central && !central.connected())
+  {
     Serial.println("[BLE] 연결 해제됨");
     resetBLEState();
     return;
   }
 
   if (connected && !authenticated &&
-      authStartTime > 0 && millis() - authStartTime > authTimeoutMs) {
+      authStartTime > 0 && millis() - authStartTime > authTimeoutMs)
+  {
     Serial.println("[BLE] 인증 타임아웃 → 연결 종료");
     updateLEDState(LED_AUTH_FAIL);
     addToBlacklist(connectedMac);
@@ -454,26 +481,31 @@ void updateBLEStateMachine() {
     return;
   }
 
-  if (connected && !authenticated && tokenChar.written()) {
+  if (connected && !authenticated && tokenChar.written())
+  {
     char token[65];
     tokenChar.readValue(token, sizeof(token));
     validateToken(connectedMac, token);
   }
 
-  if (connected && authenticated) {
-    if (!relayOn && millis() - connectedTime >= RELAY_HOLD_MS) {
+  if (connected && authenticated)
+  {
+    if (!relayOn && millis() - connectedTime >= RELAY_HOLD_MS)
+    {
       digitalWrite(RELAY_PIN, HIGH);
       relayOn = true;
       Serial.println("[RELAY] 인증 유지 10초 → Relay ON");
       updateLEDState(LED_RELAY_ON);
-    } else if (!relayOn) {
+    }
+    else if (!relayOn)
+    {
       updateLEDState(LED_AUTH_WAITING_RELAY);
     }
   }
 
-  if (connected && authenticated) {
+  if (connected && authenticated)
+  {
     const char *state = relayOn ? "ON" : "OFF";
     chargerStateChar.writeValue(state);
   }
 }
-
