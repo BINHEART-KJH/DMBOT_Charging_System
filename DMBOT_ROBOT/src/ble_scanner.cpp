@@ -1,5 +1,3 @@
-//======BLE_SCANNER======
-
 #include "ble_scanner.h"
 #include <ArduinoBLE.h>
 #include <Crypto.h>
@@ -7,6 +5,7 @@
 #include <HMAC.h>
 #include <string.h>
 
+// Relay 제어 핀
 #define RELAY_PIN 4
 
 static bool scanning = false;
@@ -20,6 +19,21 @@ const char *SECRET_KEY = "DMBOT_SECRET";
 
 bool isConnectedToStation() {
   return connected;
+}
+
+void setupRelayControl() {
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
+}
+
+void processSerialCommand(const char* cmd) {
+  if (strstr(cmd, "ST,0,BMSVCC,1,ED")) {
+    digitalWrite(RELAY_PIN, HIGH);
+    Serial.println("[RS485] Relay ON (BMSVCC=1)");
+  } else if (strstr(cmd, "ST,0,BMSVCC,0,ED")) {
+    digitalWrite(RELAY_PIN, LOW);
+    Serial.println("[RS485] Relay OFF (BMSVCC=0)");
+  }
 }
 
 void setupBLEScanner() {
@@ -120,7 +134,6 @@ void updateBLEScanLoop() {
               station = peripheral;
               connected = true;
               delay(200);
-
             } else {
               Serial.println("[BLE] GATT 인증 특성 누락");
               peripheral.disconnect();
@@ -148,7 +161,6 @@ void updateBLEScanLoop() {
     if (!station.connected()) {
       Serial.println("[BLE] 연결 해제 감지");
       connected = false;
-      digitalWrite(RELAY_PIN, LOW);
       startScan();
       return;
     }
@@ -163,37 +175,10 @@ void updateBLEScanLoop() {
       if (!chargerStateChar.readValue(probe, sizeof(probe))) {
         Serial.println("[BLE] GATT 응답 없음 → 연결 강제 해제");
         connected = false;
-        digitalWrite(RELAY_PIN, LOW);
         station.disconnect();
         delay(100);
         startScan();
         return;
-      }
-    }
-
-    if (chargerStateChar) {
-      char chargerState[10] = "";
-      static bool lastRelayState = false;
-
-      if (chargerStateChar.readValue(chargerState, sizeof(chargerState))) {
-        String stateStr = String(chargerState);
-        stateStr.trim();
-
-        bool shouldRelayBeOn = (stateStr == "ON");
-
-        if (shouldRelayBeOn != lastRelayState) {
-          lastRelayState = shouldRelayBeOn;
-          digitalWrite(RELAY_PIN, shouldRelayBeOn ? HIGH : LOW);
-
-          Serial.print("[BLE] chargerState 원본 값: [");
-          Serial.print(stateStr);
-          Serial.println("]");
-
-          if (shouldRelayBeOn)
-            Serial.println("[RELAY] 상태 변경 → 릴레이 ON");
-          else
-            Serial.println("[RELAY] 상태 변경 → 릴레이 OFF");
-        }
       }
     }
   }
