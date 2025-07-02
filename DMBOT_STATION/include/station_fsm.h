@@ -1,20 +1,22 @@
 #ifndef STATION_FSM_H
 #define STATION_FSM_H
 
+#include <Arduino.h>
+
+// FSM 상태 정의
 enum StationState {
-  ST_IDLE,
-  ST_DOCKED,
-  ST_ADVERTISING,
-  ST_CONNECTING,
-  ST_AUTHENTICATING,
-  ST_CONNECTED,
-  ST_ERROR
+  IDLE,
+  DOCKING_OK,
+  ADVERTISING,
+  CONNECTED,
+  CONNECTING,
+  ERROR
 };
 
-void stationFSM_init();
-void stationFSM_update();
+extern StationState currentState;
 
-StationState getStationState();
-void setStationState(StationState newState);
+// BLE 광고 상태를 인자로 전달
+void state_update(bool isAdvertising);
+StationState get_current_state();
 
 #endif

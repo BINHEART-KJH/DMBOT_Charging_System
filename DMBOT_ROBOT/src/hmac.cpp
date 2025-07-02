@@ -2,6 +2,8 @@
 #include "sha256.h"
 #include <string.h>
 #include <stdio.h>
+#include <Arduino.h>
+
 
 void generateHMAC_SHA256(const char* message, const char* key, char* hexOut) {
   const size_t blockSize = 64;

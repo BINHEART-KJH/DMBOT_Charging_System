@@ -1,15 +1,7 @@
+// robot_auth.h
 #ifndef ROBOT_AUTH_H
 #define ROBOT_AUTH_H
 
-#include <ArduinoBLE.h>
-
-void robotAuth_init();
-void robotAuth_reset();
-void robotAuth_update(BLEDevice central);
-bool isRobotAuthenticated();
-
-extern BLEService authService;
-extern BLECharacteristic nonceChar;
-extern BLECharacteristic tokenChar;
+void generateHMAC_SHA256(const char* message, const char* key, char* hexOut);
 
 #endif

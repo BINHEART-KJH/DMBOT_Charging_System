@@ -1,47 +1,53 @@
-#include "station_auth.h"
-#include "hmac.h"
+// #include <ArduinoBLE.h>
+// #include "station_auth.h"
+// #include "hmac.h"
+// #include "sha256.h"
 
-BLEService authService("12345678-1234-5678-1234-56789DMBOTA1");
-BLECharacteristic nonceChar("12345678-1234-5678-1234-56789DMBOTA2", BLERead | BLEWrite, 32);
-BLECharacteristic tokenChar("12345678-1234-5678-1234-56789DMBOTA3", BLERead | BLEWrite, 64);
+// const char* SECRET_KEY = "DMBOT_SHARED_SECRET";
 
-static bool authenticated = false;
-const char* secretKey = "DMBOT_SHARED_SECRET";
+// BLEService authService("180A");
+// BLECharacteristic nonceChar("2A26", BLERead, 32);
+// BLECharacteristic tokenChar("2A27", BLEWrite, 64);
 
-void stationAuth_init() {
-  BLE.setAdvertisedService(authService);
-  authService.addCharacteristic(nonceChar);
-  authService.addCharacteristic(tokenChar);
-  BLE.addService(authService);
-}
+// char currentNonce[33] = {0};
+// bool isAuthSuccess = false;
 
-void stationAuth_reset() {
-  authenticated = false;
-  nonceChar.writeValue((const uint8_t*)"", 1);
-  tokenChar.writeValue((const uint8_t*)"", 1);
-}
+// void generateNonce(char* buffer) {
+//   const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+//   for (int i = 0; i < 32; i++) {
+//     buffer[i] = charset[random(0, sizeof(charset) - 1)];
+//   }
+//   buffer[32] = '\0';
+// }
 
-bool isStationAuthenticated() {
-  return authenticated;
-}
+// void setupAuthService() {
+//   authService.addCharacteristic(nonceChar);
+//   authService.addCharacteristic(tokenChar);
+//   BLE.addService(authService);
+// }
 
-void stationAuth_update(BLEDevice central) {
-  if (authenticated) return;
-  if (!nonceChar.written() || !tokenChar.written()) return;
+// void resetAuth() {
+//   isAuthSuccess = false;
+//   generateNonce(currentNonce);
+//   nonceChar.writeValue(currentNonce);
+// }
 
-  String nonce = String((const char*)nonceChar.value());
-  String token = String((const char*)tokenChar.value());
+// bool processAuthToken() {
+//   if (!tokenChar.written()) return false;
 
-  if (nonce.length() == 0 || token.length() == 0) return;
+//   char receivedToken[65] = {0};
+//   tokenChar.readValue((uint8_t*)receivedToken, sizeof(receivedToken) - 1);
 
-  // ✅ HMAC 함수 호출
-  char expectedToken[65];
-  generateHMAC_SHA256(nonce.c_str(), secretKey, expectedToken);
+//   char expectedToken[65] = {0};
+//   generateHMAC_SHA256(currentNonce, SECRET_KEY, expectedToken);
 
-  if (token.equalsIgnoreCase(expectedToken)) {
-    Serial.println("[AUTH] 인증 성공");
-    authenticated = true;
-  } else {
-    Serial.println("[AUTH] 인증 실패");
-  }
-}
+//   if (strcmp(receivedToken, expectedToken) == 0) {
+//     isAuthSuccess = true;
+//     return true;
+//   }
+//   return false;
+// }
+
+// bool isAuthenticated() {
+//   return isAuthSuccess;
+// }

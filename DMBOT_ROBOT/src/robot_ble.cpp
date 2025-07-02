@@ -1,102 +1,100 @@
-#include "robot_ble.h"
-#include "robot_auth.h"
-#include "robot_gpio.h"
-#include <Arduino.h>
+// // robot_ble.cpp
+// #include <ArduinoBLE.h>
+// #include "robot_ble.h"
+// #include "robot_auth.h"
 
-static BLEDevice central;
-static unsigned long lastGATTReadTime = 0;
-static bool connected = false;
+// BLEDevice peripheral;
+// BLECharacteristic nonceChar;
+// BLECharacteristic tokenChar;
 
-const char* targetLocalName = "DMBOT-STATION";
-const int GATT_READ_INTERVAL = 5000;
+// bool isConnected = false;
 
-void robotBLE_init() {
-  if (!BLE.begin()) {
-    Serial.println("[BLE] BLE 초기화 실패");
-    return;
-  }
+// bool robotBLE_begin() {
+//   if (!BLE.begin()) {
+//     Serial.println("❌ BLE init failed");
+//     return false;
+//   }
+//   Serial.println("✅ BLE initialized");
+//   return true;
+// }
 
-  BLE.scan();
-  Serial.println("[BLE] 스캔 시작");
-}
+// void robotBLE_startScan() {
+//   Serial.println("🔍 Start scanning for peripherals...");
+//   BLE.scan();
+// }
 
-void robotBLE_update() {
-  if (!connected) {
-    BLEDevice peripheral = BLE.available();
-    if (peripheral && peripheral.hasLocalName() && peripheral.localName() == targetLocalName) {
-      Serial.println("[BLE] Station 발견, 연결 시도 중...");
-      BLE.stopScan();
+// bool robotBLE_connectToStation() {
+//   peripheral = BLE.available();
 
-      if (peripheral.connect()) {
-        Serial.println("[BLE] 연결 성공");
-        if (peripheral.discoverAttributes()) {
-          Serial.println("[BLE] GATT 발견 성공");
+//   if (!peripheral) return false;
 
-          central = peripheral;
-          robotAuth_reset();
-          robotAuth_update(central);
-          connected = true;
-          lastGATTReadTime = millis();
-        } else {
-          Serial.println("[BLE] GATT 탐색 실패, 연결 해제");
-          peripheral.disconnect();
-          BLE.scan();
-        }
-      } else {
-        Serial.println("[BLE] 연결 실패, 재스캔");
-        BLE.scan();
-      }
-    }
-  } else {
-    // 연결 상태 유지 중
-    if (!central.connected()) {
-      Serial.println("[BLE] 연결 끊김, 재스캔");
-      connected = false;
-      robotAuth_reset();
-      BLE.scan();
-      return;
-    }
+//   Serial.print("📡 Found: ");
+//   Serial.println(peripheral.address());
 
-    // 인증 시도
-    robotAuth_update(central);
+//   if (peripheral.localName() != "DM-STATION") {
+//     Serial.println("⛔ Not DM-STATION, skipping");
+//     return false;
+//   }
 
-    // 인증 성공 후 주기적 GATT 상태 체크
-    if (robotBLE_isAuthenticated()) {
-      if (millis() - lastGATTReadTime > GATT_READ_INTERVAL) {
-        Serial.println("[BLE] GATT 상태 주기적 체크...");
+//   Serial.println("🔗 Connecting...");
+//   if (!peripheral.connect()) {
+//     Serial.println("❌ Connection failed");
+//     return false;
+//   }
 
-        // 예: Battery 상태 characteristic 읽기 시도
-        BLECharacteristic batteryChar = central.characteristic("battery_state_uuid");
-        if (batteryChar && batteryChar.canRead()) {
-          if (batteryChar.read()) {
-            int value = batteryChar.value()[0];
-            Serial.print("[BLE] Battery 상태: ");
-            Serial.println(value);
-          } else {
-            Serial.println("[BLE] GATT 읽기 실패, 연결 해제");
-            robotBLE_disconnect();
-            BLE.scan();
-          }
-        }
+//   Serial.println("✅ Connected!");
+//   if (!peripheral.discoverAttributes()) {
+//     Serial.println("❌ Discover failed");
+//     peripheral.disconnect();
+//     return false;
+//   }
 
-        lastGATTReadTime = millis();
-      }
-    }
-  }
-}
+//   nonceChar = peripheral.characteristic("2A26");
+//   tokenChar = peripheral.characteristic("2A27");
 
-bool robotBLE_isConnected() {
-  return connected && central.connected();
-}
+//   if (!nonceChar || !tokenChar) {
+//     Serial.println("❌ Required characteristics not found");
+//     peripheral.disconnect();
+//     return false;
+//   }
 
-bool robotBLE_isAuthenticated() {
-  return isRobotAuthenticated();
-}
+//   char nonce[33] = {0};
+//   if (!nonceChar.readValue((uint8_t*)nonce, sizeof(nonce) - 1)) {
+//     Serial.println("❌ Failed to read nonce");
+//     peripheral.disconnect();
+//     return false;
+//   }
 
-void robotBLE_disconnect() {
-  if (central && central.connected()) {
-    central.disconnect();
-  }
-  connected = false;
-  robotAuth_reset();
-}
+//   Serial.print("📥 Nonce received: ");
+//   Serial.println(nonce);
+
+//   char token[65] = {0};
+//   generateHMAC_SHA256(nonce, "SHARED_SECRET_KEY", token);
+
+//   Serial.print("📤 Sending token: ");
+//   Serial.println(token);
+
+//   if (!tokenChar.writeValue((const uint8_t*)token, strlen(token))) {
+//     Serial.println("❌ Failed to write token");
+//     peripheral.disconnect();
+//     return false;
+//   }
+
+//   Serial.println("✅ Token sent");
+//   isConnected = true;
+//   return true;
+// }
+
+// void robotBLE_loop() {
+//   if (isConnected && !peripheral.connected()) {
+//     Serial.println("🔌 Disconnected");
+//     isConnected = false;
+//     BLE.scan();  // restart scan
+//   }
+
+//   if (!isConnected) {
+//     if (robotBLE_connectToStation()) {
+//       Serial.println("🔄 Still connected...");
+//     }
+//   }
+// }

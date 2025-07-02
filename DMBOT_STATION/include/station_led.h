@@ -1,11 +1,7 @@
 #ifndef STATION_LED_H
 #define STATION_LED_H
 
-#include "station_fsm.h"
-
-void ledStatus_init();
-void ledStatus_update();
-
-void setLedState(StationState state);
+void led_init();  // FastLED 초기화
+void led_run();   // LED 상태 갱신 (현재는 흰색 고정)
 
 #endif
