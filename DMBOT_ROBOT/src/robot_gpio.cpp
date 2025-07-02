@@ -1,13 +1,20 @@
-#include "robot_gpio.h"
 #include <Arduino.h>
+#include "robot_gpio.h"
 
-#define BATTERY_RELAY_PIN 4  // D4 → GPIO 4
+#define BATTERY_RELAY_PIN 4
 
-void robotGPIO_init() {
+bool relayState = false;
+
+void gpio_init() {
   pinMode(BATTERY_RELAY_PIN, OUTPUT);
-  digitalWrite(BATTERY_RELAY_PIN, LOW);  // 기본 OFF
+  setRelay(false);  // 초기 OFF
 }
 
-void robotGPIO_setRelay(bool on) {
+void setRelay(bool on) {
+  relayState = on;
   digitalWrite(BATTERY_RELAY_PIN, on ? HIGH : LOW);
+}
+
+bool getRelayState() {
+  return relayState;
 }

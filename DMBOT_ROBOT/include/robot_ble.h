@@ -1,12 +1,14 @@
-// robot_ble.h
 #ifndef ROBOT_BLE_H
 #define ROBOT_BLE_H
 
-#include <ArduinoBLE.h>
+void ble_init();
+void ble_run();
+void ble_reset();
 
-bool robotBLE_begin();
-void robotBLE_startScan();
-bool robotBLE_connectToStation();
-void robotBLE_loop();
+// RS485 보고용 상태 Getter 함수
+bool getBleConnectionState();
+bool getBatteryFullStatus();
+bool getChargerOkStatus();
+bool getChargerRelayStatus();
 
 #endif

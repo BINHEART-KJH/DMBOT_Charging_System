@@ -1,49 +1,42 @@
 #include "hmac.h"
 #include "sha256.h"
 #include <string.h>
-#include <stdio.h>
-#include <Arduino.h>
 
+HMAC::HMAC() {}
 
-void generateHMAC_SHA256(const char* message, const char* key, char* hexOut) {
-  const size_t blockSize = 64;
+void HMAC::init(const uint8_t* key, size_t keyLength) {
   uint8_t keyBlock[blockSize];
   memset(keyBlock, 0, blockSize);
 
-  size_t keyLen = strlen(key);
-  if (keyLen > blockSize) {
-    SHA256 sha;
-    sha.update((const uint8_t*)key, keyLen);
-    sha.finalize(keyBlock);
+  if (keyLength > blockSize) {
+    sha256(key, keyLength, keyBlock);
   } else {
-    memcpy(keyBlock, key, keyLen);
+    memcpy(keyBlock, key, keyLength);
   }
-
-  uint8_t o_key_pad[blockSize];
-  uint8_t i_key_pad[blockSize];
 
   for (size_t i = 0; i < blockSize; i++) {
     o_key_pad[i] = keyBlock[i] ^ 0x5c;
     i_key_pad[i] = keyBlock[i] ^ 0x36;
   }
+}
 
-  // Inner hash
+void HMAC::update(const uint8_t* data, size_t length) {
+  uint8_t innerData[blockSize + length];
+  memcpy(innerData, i_key_pad, blockSize);
+  memcpy(innerData + blockSize, data, length);
+
   uint8_t innerHash[32];
-  SHA256 shaInner;
-  shaInner.update(i_key_pad, blockSize);
-  shaInner.update((const uint8_t*)message, strlen(message));
-  shaInner.finalize(innerHash);
+  sha256(innerData, blockSize + length, innerHash);
 
-  // Outer hash
-  SHA256 shaOuter;
-  shaOuter.update(o_key_pad, blockSize);
-  shaOuter.update(innerHash, 32);
-  uint8_t hmacResult[32];
-  shaOuter.finalize(hmacResult);
+  uint8_t outerData[blockSize + 32];
+  memcpy(outerData, o_key_pad, blockSize);
+  memcpy(outerData + blockSize, innerHash, 32);
 
-  // HEX 출력
-  for (int i = 0; i < 32; i++) {
-    sprintf(&hexOut[i * 2], "%02x", hmacResult[i]);
-  }
-  hexOut[64] = '\0';
+  sha256(outerData, blockSize + 32, innerHash);
+
+  memcpy(i_key_pad, innerHash, 32); // store result temporarily
+}
+
+void HMAC::finalize(uint8_t* hmacResult, size_t resultLength) {
+  memcpy(hmacResult, i_key_pad, resultLength);
 }

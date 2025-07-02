@@ -2,9 +2,9 @@
 #define BLACK_WHITE_LIST_H
 
 void initLists();
-bool isInBlacklist(const char* mac);  // ✅ 이름 통일
-bool isWhitelisted(const char* mac);
 void addToBlacklist(const char* mac);
 void addToWhitelist(const char* mac);
+bool isInBlacklist(const char* mac);
+bool isWhitelisted(const char* mac);
 
 #endif

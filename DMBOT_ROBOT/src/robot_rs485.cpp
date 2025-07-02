@@ -1,43 +1,56 @@
-#include "robot_rs485.h"
-#include "robot_gpio.h"
 #include <Arduino.h>
+#include "robot_gpio.h"
+#include "robot_ble.h"
 
-#define RS485 Serial1
+unsigned long lastReportTime = 0;
 
-static String rxBuffer;
+String inputBuffer;
 
-void robotRS485_init() {
-  RS485.begin(9600);
+void rs485_init() {
+  Serial1.begin(9600);
 }
 
-void robotRS485_update() {
-  while (RS485.available()) {
-    char c = RS485.read();
+void rs485_report() {
+  if (millis() - lastReportTime < 5000) return;
+  lastReportTime = millis();
 
+  Serial1.print("ST,0,BMSBLE,");
+  Serial1.print(getBleConnectionState() ? "1" : "0");
+  Serial1.println(",ED");
+
+  Serial1.print("ST,0,BMSBATFULL,");
+  Serial1.print(getBatteryFullStatus() ? "1" : "0");
+  Serial1.println(",ED");
+
+  Serial1.print("ST,0,BMSCHARGER,");
+  Serial1.print(getChargerOkStatus() ? "1" : "0");
+  Serial1.println(",ED");
+
+  Serial1.print("ST,0,BMSCHARGERRELAY,");
+  Serial1.print(getChargerRelayStatus() ? "1" : "0");
+  Serial1.println(",ED");
+}
+
+
+void rs485_run() {
+  while (Serial1.available()) {
+    char c = Serial1.read();
     if (c == '\n') {
-      rxBuffer.trim();
-      if (rxBuffer.startsWith("ST,0,BMSROBOT,")) {
-        if (rxBuffer.endsWith(",1,ED")) {
-          Serial.println("[RS485] 릴레이 ON 명령 수신");
-          robotGPIO_setRelay(true);
-        } else if (rxBuffer.endsWith(",0,ED")) {
-          Serial.println("[RS485] 릴레이 OFF 명령 수신");
-          robotGPIO_setRelay(false);
+      inputBuffer.trim();
+      if (inputBuffer.startsWith("ST,0,BMSROBOT,")) {
+        if (inputBuffer.endsWith(",1,ED")) {
+          setRelay(true);
+          Serial.println("🟢 RS485: 릴레이 ON");
+        } else if (inputBuffer.endsWith(",0,ED")) {
+          setRelay(false);
+          Serial.println("🔴 RS485: 릴레이 OFF");
+        } else {
+          Serial.println("⚠️ RS485: 잘못된 릴레이 명령");
         }
       }
-      rxBuffer = "";
+      inputBuffer = "";  // Clear buffer
     } else {
-      rxBuffer += c;
+      inputBuffer += c;
     }
-  }
-}
-
-void robotRS485_sendBLEStatus(bool connected) {
-  if (connected) {
-    RS485.println("ST,0,BMSBLE,1,ED");
-    Serial.println("[RS485] BLE 연결됨 전송");
-  } else {
-    RS485.println("ST,0,BMSBLE,0,ED");
-    Serial.println("[RS485] BLE 연결 해제 전송");
   }
 }

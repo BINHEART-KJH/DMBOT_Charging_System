@@ -1,8 +1,8 @@
 #ifndef ROBOT_RS485_H
 #define ROBOT_RS485_H
 
-void robotRS485_init();
-void robotRS485_update();
-void robotRS485_sendBLEStatus(bool connected);
+void rs485_init();
+void rs485_run();
+void rs485_report();
 
 #endif
