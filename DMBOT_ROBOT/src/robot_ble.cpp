@@ -15,8 +15,16 @@
 #define AUTH_TIMEOUT_MS           1500
 #define RSSI_THRESHOLD            -65
 
-BLEDevice peripheral;
+enum BLEState {
+  BLE_IDLE,
+  BLE_SCANNING,
+  BLE_CONNECTING,
+  BLE_CONNECTED
+};
+
 BLEState bleState = BLE_IDLE;
+
+BLEDevice peripheral;
 bool authSuccess = false;
 bool chargerState = false;
 
@@ -39,111 +47,27 @@ void setupBLE() {
   Serial.println("[BLE] Initialized");
 }
 
+void startBLEScan() {
+  BLE.scan();  // Start scanning
+  Serial.println("[BLE] Scanning started");
+}
+
+void updateBLEState() {
+  BLEDevice peripheral = BLE.available();
+  if (peripheral) {
+    Serial.print("[BLE] Found device: ");
+    Serial.println(peripheral.address());
+
+    // TODO: 연결, 인증, GATT 읽기 로직 등 추가 예정
+  }
+
+  // 연결 상태 및 특성 상태 업데이트 로직 추가 가능
+}
+
 bool isBLEConnected() {
-  return bleState == BLE_CONNECTED && authSuccess;
+  return BLE.connected();
 }
 
 bool isChargerStateOn() {
   return chargerState;
-}
-
-void updateBLE() {
-  switch (bleState) {
-    case BLE_IDLE:
-      Serial.println("[BLE] Scanning...");
-      BLE.scan();
-      bleState = BLE_SCANNING;
-      break;
-
-    case BLE_SCANNING: {
-      BLEDevice dev = BLE.available();
-      if (dev && dev.hasLocalName() && dev.localName() == LOCAL_NAME && dev.rssi() > RSSI_THRESHOLD) {
-        BLE.stopScan();
-        if (dev.connect()) {
-          peripheral = dev;
-          bleState = BLE_CONNECTED;
-          Serial.println("[BLE] Connected to Station");
-        } else {
-          Serial.println("[BLE] Connect failed");
-          bleState = BLE_IDLE;
-        }
-      }
-      break;
-    }
-
-    case BLE_CONNECTED:
-      if (!peripheral.connected()) {
-        Serial.println("[BLE] Disconnected");
-        BLE.disconnect();
-        bleState = BLE_IDLE;
-        authSuccess = false;
-        chargerState = false;
-        break;
-      }
-
-      if (!peripheral.discoverAttributes()) {
-        Serial.println("[BLE] GATT Discovery Failed");
-        BLE.disconnect();
-        bleState = BLE_IDLE;
-        break;
-      }
-
-      nonceChar = peripheral.characteristic(NONCE_CHAR_UUID);
-      tokenChar = peripheral.characteristic(TOKEN_CHAR_UUID);
-      chargerStateChar = peripheral.characteristic(CHARGERSTATE_CHAR_UUID);
-
-      if (!nonceChar || !tokenChar || !chargerStateChar) {
-        Serial.println("[BLE] GATT characteristic missing");
-        BLE.disconnect();
-        bleState = BLE_IDLE;
-        break;
-      }
-
-      if (!nonceChar.canRead() || !tokenChar.canWrite() || !chargerStateChar.canRead()) {
-        Serial.println("[BLE] Invalid permissions");
-        BLE.disconnect();
-        bleState = BLE_IDLE;
-        break;
-      }
-
-      // === 인증 ===
-      nonceChar.readValue((uint8_t*)nonceBuffer, sizeof(nonceBuffer) - 1);
-      nonceBuffer[sizeof(nonceBuffer) - 1] = '\0';
-
-      char tokenOut[65] = {0};
-      generateHMAC_SHA256(secretKey, nonceBuffer, tokenOut);
-      tokenChar.writeValue((uint8_t*)tokenOut, 64);
-
-      authStartTime = millis();
-      while (millis() - authStartTime < AUTH_TIMEOUT_MS) {
-        delay(50);
-        if (!peripheral.connected()) break;
-
-        uint8_t stateVal[2] = {0};
-        if (chargerStateChar.readValue(stateVal, 1)) {
-          if (stateVal[0] == '1') {
-            authSuccess = true;
-            break;
-          }
-        }
-      }
-
-      if (!authSuccess) {
-        Serial.println("[BLE] Auth timeout or fail");
-        BLE.disconnect();
-        bleState = BLE_IDLE;
-        break;
-      }
-
-      Serial.println("[BLE] Authenticated");
-      bleState = BLE_CONNECTED;
-      break;
-  }
-
-  if (authSuccess && chargerStateChar) {
-    uint8_t val[2] = {0};
-    if (chargerStateChar.readValue(val, 1)) {
-      chargerState = (val[0] == '1');
-    }
-  }
 }

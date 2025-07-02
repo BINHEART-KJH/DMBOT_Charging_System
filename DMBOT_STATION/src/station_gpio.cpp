@@ -1,94 +1,55 @@
 #include "station_gpio.h"
-#include "station_ble.h"
 
-#define DOCKING_PIN        2
-#define CHARGER_OK_PIN     6
-#define BATTERY_FULL_PIN   5
-#define RELAY_PIN          7
+static bool dockingPinState = false;
+static bool lastReadState = false;
+static bool lastDockingPin = false;
+static unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 30;  // ms
 
-// 내부 상태 변수
-bool docked = false;
-bool relayOn = false;
 
-unsigned long lastDockChangeTime = 0;
-bool lastDockRead = false;
-
-unsigned long relayStartTime = 0;
-const unsigned long RELAY_TRIGGER_DELAY_MS = 10000;
-
-void setupGPIO() {
+void stationGPIO_init() {
   pinMode(DOCKING_PIN, INPUT);
-  pinMode(CHARGER_OK_PIN, INPUT);
-  pinMode(BATTERY_FULL_PIN, INPUT);
   pinMode(RELAY_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
 
   digitalWrite(RELAY_PIN, LOW);
+  digitalWrite(LED_PIN, LOW);
 }
 
-bool readDockingState() {
-  return digitalRead(DOCKING_PIN) == HIGH;
-}
+void stationGPIO_update() {
+  bool reading = digitalRead(DOCKING_PIN);
+  unsigned long currentTime = millis();
 
-void updateGPIO() {
-  // 도킹 핀 디바운스 (HIGH 유지 100ms → 광고 시작)
-  bool currentDock = readDockingState();
-  unsigned long now = millis();
-
-  if (currentDock != lastDockRead) {
-    lastDockChangeTime = now;
-    lastDockRead = currentDock;
+  if (reading != lastDockingPin) {
+    lastDebounceTime = currentTime;
   }
 
-  if (!docked && currentDock && (now - lastDockChangeTime >= 100)) {
-    docked = true;
-    startAdvertising();
-  }
-
-  if (docked && !currentDock) {
-    docked = false;
-    disconnectAndReset();
-  }
-
-  // 릴레이 제어 로직
-  if (getBLEState() == CONNECTED && isDocked()) {
-    if (isChargerOK() && !isBatteryFull()) {
-      if (relayStartTime == 0) relayStartTime = now;
-
-      if ((now - relayStartTime >= RELAY_TRIGGER_DELAY_MS) && !relayOn) {
-        relayOn = true;
-        digitalWrite(RELAY_PIN, HIGH);
-        setChargerState(true); // BLE GATT 업데이트
-      }
-    } else {
-      relayStartTime = 0;
-      if (relayOn) {
-        relayOn = false;
-        digitalWrite(RELAY_PIN, LOW);
-        setChargerState(false);
+  if ((currentTime - lastDebounceTime) > debounceDelay) {
+    if (reading != dockingPinState) {
+      dockingPinState = reading;
+      if (dockingPinState) {
+        Serial.println("[GPIO] 도킹 감지됨 (HIGH)");
+      } else {
+        Serial.println("[GPIO] 도킹 해제됨 (LOW)");
       }
     }
-  } else {
-    relayStartTime = 0;
-    if (relayOn) {
-      relayOn = false;
-      digitalWrite(RELAY_PIN, LOW);
-      setChargerState(false);
-    }
   }
+
+  lastDockingPin = reading;
 }
 
-bool isDocked() {
-  return docked;
+bool isDockingPinHigh() {
+  return dockingPinState;
 }
 
-bool isChargerOK() {
-  return digitalRead(CHARGER_OK_PIN) == HIGH;
+void setRelayState(bool on) {
+  digitalWrite(RELAY_PIN, on ? HIGH : LOW);
 }
 
-bool isBatteryFull() {
-  return digitalRead(BATTERY_FULL_PIN) == HIGH;
+void setLED(bool on) {
+  digitalWrite(LED_PIN, on ? HIGH : LOW);
 }
 
-bool isRelayOn() {
-  return relayOn;
+void relay_set(bool on) {
+  digitalWrite(RELAY_PIN, on ? HIGH : LOW);
 }
