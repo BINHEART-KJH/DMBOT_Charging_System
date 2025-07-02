@@ -1,44 +1,19 @@
-#include <ArduinoBLE.h>
+#include <Arduino.h>
+#include "robot_fsm.h"
+#include "robot_ble.h"
+#include "robot_gpio.h"
+#include "robot_rs485.h"
 
 void setup() {
-  Serial.begin(9600);
-
-  if (!BLE.begin()) {
-    Serial.println("BLE init failed");
-    while (1);
-  }
-
-  Serial.println("Robot BLE scanning...");
-  BLE.scan();
+  Serial.begin(9600);            // 디버깅용 Serial
+  robotGPIO_init();              // 릴레이 제어 핀 초기화
+  robotBLE_init();               // BLE 초기화
+  robotRS485_init();            // RS485 통신 초기화
+  robotFSM_init();              // 상태머신 초기화
 }
 
 void loop() {
-  BLEDevice peripheral = BLE.available();
-
-  if (peripheral) {
-    Serial.print("Found device: ");
-    Serial.print(peripheral.address());
-    Serial.print(" (");
-    Serial.print(peripheral.localName());
-    Serial.println(")");
-
-    if (peripheral.localName() == "DM-STATION") {
-      Serial.println("Target station found. Connecting...");
-      BLE.stopScan();
-
-      if (peripheral.connect()) {
-        Serial.println("Connected to DM-STATION!");
-
-        while (peripheral.connected()) {
-          delay(100);
-        }
-
-        Serial.println("Disconnected from station");
-      } else {
-        Serial.println("Connection failed");
-      }
-
-      BLE.scan();  // Restart scanning after disconnect
-    }
-  }
+  robotFSM_update();            // FSM 상태 업데이트
+  robotBLE_update();           // BLE 상태 관리 (연결, 인증, GATT 읽기 등)
+  robotRS485_update();         // RS485 명령 수신 및 응답 송신 처리
 }

@@ -1,10 +1,12 @@
 #ifndef ROBOT_BLE_H
 #define ROBOT_BLE_H
 
-void setupBLE();
-void startBLEScan();
-void updateBLEState();
-bool isBLEConnected();
-bool isChargerStateOn();
+#include <ArduinoBLE.h>
+
+void robotBLE_init();
+void robotBLE_update();
+bool robotBLE_isConnected();
+bool robotBLE_isAuthenticated();
+void robotBLE_disconnect();
 
 #endif
