@@ -12,7 +12,7 @@ const unsigned long blinkInterval = 500;  // 0.5초 간격 깜빡임
 
 void led_init() {
   FastLED.addLeds<NEOPIXEL, RGB_PIN>(leds, NUM_LEDS);
-  FastLED.setBrightness(25); // 초기 10% 밝기
+  FastLED.setBrightness(250); // 초기 10% 밝기
   fill_solid(leds, NUM_LEDS, CRGB::Black);
   FastLED.show();
 }
@@ -53,7 +53,7 @@ void led_run() {
       break;
   }
 
-  FastLED.setBrightness(25);
+  FastLED.setBrightness(250);
   fill_solid(leds, NUM_LEDS, color);
   FastLED.show();
 }
