@@ -29,20 +29,22 @@ void gpio_run() {
   }
 
   // A0 전압 기반으로 RELAY_PIN2 제어
+  
   int adcValue = analogRead(ADC_PIN);
   float voltage = (adcValue / 1023.0) * 3.3;
 
-  if (voltage > 2.54 && relay2State) {
-    digitalWrite(RELAY_PIN2, LOW);
-    relay2State = false;
-    Serial.println("A0 > 2.5V → Relay2 OFF");
-  } else if (voltage < 2.3 && !relay2State) {
-    digitalWrite(RELAY_PIN2, HIGH);
-    relay2State = true;
-    Serial.println("A0 < 2.3V → Relay2 ON");
-  }
+  if (voltage > 2.54 && !relay2State) {
+  digitalWrite(RELAY_PIN2, HIGH);   // 릴레이 ON
+  relay2State = true;
+  Serial.println("A0 > 2.54V → Relay2 ON");
+} else if (voltage < 2.3 && relay2State) {
+  digitalWrite(RELAY_PIN2, LOW);    // 릴레이 OFF
+  relay2State = false;
+  Serial.println("A0 < 2.3V → Relay2 OFF");
+}
 
   // 3초마다 상태 출력
+  
   if (millis() - lastPrintTime >= 3000) {
     lastPrintTime = millis();
     Serial.print("[ADC] A0 Voltage: ");
