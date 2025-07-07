@@ -7,12 +7,16 @@
 void setup() {
   Serial.begin(9600);
   gpio_init();
+  delay(100);
   rs485_init();
+  delay(100);
   ble_init();
+  delay(100);
 }
 
 void loop() {
   rs485_run();  // RS485 수신
   ble_run();    // BLE 상태 FSM
   rs485_report();  // 주기적 BLE + 상태 보고
+  delay(10);
 }
