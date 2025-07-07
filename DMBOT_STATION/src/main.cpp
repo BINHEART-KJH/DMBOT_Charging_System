@@ -2,7 +2,7 @@
 #include "station_fsm.h"
 #include "station_gpio.h"
 #include "station_led.h"
-#include "station_ble.h"  // ble_init(), ble_run(), ble_reset()
+#include "station_ble.h"
 
 StationState lastState = IDLE;
 
@@ -14,7 +14,7 @@ void setup() {
 
   gpio_init();
   led_init();
-  ble_init();  // BLE + 인증 토큰 초기화
+  ble_init();
 
   Serial.println("Station Setup Complete");
 }
@@ -25,11 +25,9 @@ void loop() {
   state_update(isAdvertising);
   led_run();
 
-  // FSM 상태 확인 및 BLE 리셋 처리
   StationState current = get_current_state();
   if (current != lastState) {
     lastState = current;
-
     if (current == IDLE) {
       ble_reset();
     }
