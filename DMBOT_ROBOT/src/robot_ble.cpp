@@ -366,7 +366,7 @@ void ble_run() {
         lastRSSILog = millis();
       }
 
-      if (getAverageRSSI() >= -65) {
+      if (getAverageRSSI() >= -70) {
         if (rssiOkStart == 0) rssiOkStart = millis();
         if (millis() - rssiOkStart >= 10000) {
           rssiOkStart = 0;
@@ -443,7 +443,7 @@ void ble_run() {
       lastRSSILog = millis();
     }
 
-    if (getAverageRSSI() < -65) {
+    if (getAverageRSSI() < -73) {
       if (rssiBadStart == 0) rssiBadStart = millis();
       else if (millis() - rssiBadStart >= 10000) {
         Serial.println("📴 RSSI 너무 높음 → 연결 해제");
