@@ -53,7 +53,7 @@ void led_run() {
       break;
   }
 
-  FastLED.setBrightness(250);
+  FastLED.setBrightness(25);
   fill_solid(leds, NUM_LEDS, color);
   FastLED.show();
 }

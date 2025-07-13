@@ -34,11 +34,11 @@ void gpio_run() {
   float voltage = (adcValue / 1023.0) * 3.3;
 
   if (voltage > 2.54 && !relay2State) {
-  digitalWrite(RELAY_PIN2, HIGH);   // 릴레이 ON
+  //digitalWrite(RELAY_PIN2, HIGH);   // 릴레이 ON
   relay2State = true;
   Serial.println("A0 > 2.54V → Relay2 ON");
 } else if (voltage < 2.3 && relay2State) {
-  digitalWrite(RELAY_PIN2, LOW);    // 릴레이 OFF
+  //digitalWrite(RELAY_PIN2, LOW);    // 릴레이 OFF
   relay2State = false;
   Serial.println("A0 < 2.3V → Relay2 OFF");
 }

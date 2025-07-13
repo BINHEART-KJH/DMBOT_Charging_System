@@ -11,4 +11,10 @@ void ble_init();
 void ble_run();
 void ble_reset();
 
+void onRobotRelayWritten(BLEDevice central, BLECharacteristic characteristic);
+void sendStatus(const char* label, byte value);
+void setupGattService();
+void updateGattValues();
+void checkRobotRelayStatus();
+
 #endif
