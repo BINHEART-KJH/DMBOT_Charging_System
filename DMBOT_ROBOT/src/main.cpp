@@ -5,6 +5,7 @@
 #include "robot_rs485.h"
 
 void setup() {
+  delay(2000);
   Serial.begin(9600);
   gpio_init();
   delay(100);

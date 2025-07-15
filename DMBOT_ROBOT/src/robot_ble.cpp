@@ -390,9 +390,9 @@ void ble_run() {
                 lastRSSILog = millis();
             }
 
-            if (getAverageRSSI() >= -70) {
+            if (getAverageRSSI() >= -120) {
                 if (rssiOkStart == 0) rssiOkStart = millis();
-                if (millis() - rssiOkStart >= 10000) {
+                if (millis() - rssiOkStart >= 5000) {
                     rssiOkStart = 0;
                     BLE.stopScan();
                     Serial.println("📶 RSSI OK → 연결 시도 중...");

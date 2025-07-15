@@ -1,8 +1,38 @@
 #include "station_gpio.h"
 #include "station_fsm.h"  // currentState 참조용
 
-bool relay2State = true;  // RELAY_PIN2(D4)의 현재 상태
+bool relay2State = false;  // RELAY_PIN2(D4)의 현재 상태
 unsigned long lastPrintTime = 0;
+
+// === 전역 변수 (station_gpio.cpp 상단에 위치) ===
+float smoothedVoltage = 0.0;
+bool firstSample = true;
+const float alpha = 0.03; // 더 작을수록 반응이 느리지만 안정적
+
+// === 필터링된 전압 읽기 함수 ===
+float getFilteredVoltage()
+{
+  int raw = analogRead(ADC_PIN);
+
+  // 이상치 제거 (하드웨어 노이즈 등)
+  if (raw < 100 || raw > 1023)
+    return smoothedVoltage;
+
+  float voltage = (raw / 1023.0) * 3.3;
+
+  if (firstSample)
+  {
+    smoothedVoltage = voltage;
+    firstSample = false;
+  }
+  else
+  {
+    smoothedVoltage = alpha * voltage + (1.0 - alpha) * smoothedVoltage;
+  }
+
+  return smoothedVoltage;
+}
+
 
 void gpio_init() {
   pinMode(DOCKING_PIN, INPUT);
@@ -10,7 +40,7 @@ void gpio_init() {
   digitalWrite(RELAY_PIN, LOW);
 
   pinMode(RELAY_PIN2, OUTPUT);        // D4
-  digitalWrite(RELAY_PIN2, HIGH);     // 기본 ON 상태
+  digitalWrite(RELAY_PIN2, LOW);     // 기본 OFF 상태
 
   pinMode(BUILTIN_LED, OUTPUT);
   digitalWrite(BUILTIN_LED, LOW);
@@ -28,23 +58,31 @@ void gpio_run() {
     digitalWrite(BUILTIN_LED, LOW);
   }
 
-  // A0 전압 기반으로 RELAY_PIN2 제어
-  
-  int adcValue = analogRead(ADC_PIN);
-  float voltage = (adcValue / 1023.0) * 3.3;
+  // === 필터링된 전압 기반 릴레이 제어 ===
+  float voltage = getFilteredVoltage();
 
-  if (voltage > 2.54 && !relay2State) {
-  //digitalWrite(RELAY_PIN2, HIGH);   // 릴레이 ON
-  relay2State = true;
-  Serial.println("A0 > 2.54V → Relay2 ON");
-} else if (voltage < 2.3 && relay2State) {
-  //digitalWrite(RELAY_PIN2, LOW);    // 릴레이 OFF
-  relay2State = false;
-  Serial.println("A0 < 2.3V → Relay2 OFF");
-}
+  // === 예외: 전압 너무 낮음 → 연결 끊김 ===
+  if (voltage <= 0.829) {
+    if (relay2State) {
+      digitalWrite(RELAY_PIN2, LOW);
+      relay2State = false;
+      Serial.println("A0 <= 0.829V → Relay2 OFF (DISCONNECTED)");
+    }
+  }
+  // === 릴레이 ON 조건 (충전 시작) ===
+  else if (voltage >= 0.902 && voltage <= 1.220 && !relay2State) {
+    digitalWrite(RELAY_PIN2, HIGH);
+    relay2State = true;
+    Serial.println("A0 0.902V~1.220V → Relay2 ON (Charging)");
+  }
+  // === 릴레이 OFF 조건 (충전 완료) ===
+  else if (voltage >= 1.300 && relay2State) {
+    digitalWrite(RELAY_PIN2, LOW);
+    relay2State = false;
+    Serial.println("A0 >= 1.300V → Relay2 OFF (FULL CHARGED)");
+  }
 
   // 3초마다 상태 출력
-  
   if (millis() - lastPrintTime >= 3000) {
     lastPrintTime = millis();
     Serial.print("[ADC] A0 Voltage: ");
@@ -53,3 +91,4 @@ void gpio_run() {
     Serial.println(relay2State ? "ON" : "OFF");
   }
 }
+
