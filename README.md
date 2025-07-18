@@ -41,17 +41,17 @@ DMBOT Charging System by Arduino Nano RP2040 (BLE based)
 
 ---
 
-## 시스템 동작 시퀀스 요약
+### 시스템 동작 시퀀스 요약
 
 ```mermaid
 graph TD
-    A[Robot → BLE 연결 시도] --> B{RSSI 필터 통과?}
+    A[Robot -> BLE 연결 시도] --> B{RSSI 필터 통과 여부}
     B -- No --> A
-    B -- Yes --> C[Robot 인증 → BLE 연결 완료]
-    C --> D[Station 도킹 핀 HIGH 유지 → DOCKING_OK]
-    D --> E{Battery Voltage (A0) < 54.12V?}
-    E -- Yes --> F[Relay ON → Remote Pin 쇼트 → 충전 시작]
-    E -- No --> G[Relay OFF → Remote Pin Open → 충전 차단]
-    G --> H[NPB-750 출력 0V로 차단]
-    H --> I{전압이 다시 50V 이하로 내려감?}
+    B -- Yes --> C[BLE 인증 완료 -> 연결 성공]
+    C --> D[Station: 도킹 핀 HIGH 유지 -> DOCKING_OK 상태]
+    D --> E{A0 전압 < 54.12V 인가?}
+    E -- Yes --> F[Relay ON -> Remote Pin 쇼트 -> 충전 시작]
+    E -- No --> G[Relay OFF -> Remote Pin Open -> 충전 차단]
+    G --> H[NPB-750 출력 전압 0V로 차단됨]
+    H --> I{A0 전압 ≤ 50V로 다시 떨어짐?}
     I -- Yes --> F
