@@ -9,6 +9,11 @@ float smoothedVoltage = 0.0;
 bool firstSample = true;
 const float alpha = 0.03; // 더 작을수록 반응이 느리지만 안정적
 
+// === A0 전압 조건 상수 (히스테리시스 적용, 분압비 약 40.17 기준) ===
+const float RELAY_ON_MIN_V = 1.120;     // 45.0V 이상
+const float RELAY_ON_MAX_V = 1.245;     // 50.0V 이하
+const float RELAY_OFF_FULL_V = 1.320;   // 53.0V 이상
+
 // === 필터링된 전압 읽기 함수 ===
 float getFilteredVoltage()
 {
@@ -32,7 +37,6 @@ float getFilteredVoltage()
 
   return smoothedVoltage;
 }
-
 
 void gpio_init() {
   pinMode(DOCKING_PIN, INPUT);
@@ -61,25 +65,25 @@ void gpio_run() {
   // === 필터링된 전압 기반 릴레이 제어 ===
   float voltage = getFilteredVoltage();
 
-  // === 예외: 전압 너무 낮음 → 연결 끊김 ===
-  if (voltage <= 0.829) {
-    if (relay2State) {
+  if (relay2State) {
+    // 릴레이 ON 상태일 때 → OFF 조건 확인
+    if (voltage >= RELAY_OFF_FULL_V) {
       digitalWrite(RELAY_PIN2, LOW);
       relay2State = false;
-      Serial.println("A0 <= 0.829V → Relay2 OFF (DISCONNECTED)");
+      Serial.println("A0 >= 1.320V (53V) → Relay2 OFF (FULL CHARGED)");
     }
-  }
-  // === 릴레이 ON 조건 (충전 시작) ===
-  else if (voltage >= 0.902 && voltage <= 1.220 && !relay2State) {
-    digitalWrite(RELAY_PIN2, HIGH);
-    relay2State = true;
-    Serial.println("A0 0.902V~1.220V → Relay2 ON (Charging)");
-  }
-  // === 릴레이 OFF 조건 (충전 완료) ===
-  else if (voltage >= 1.300 && relay2State) {
-    digitalWrite(RELAY_PIN2, LOW);
-    relay2State = false;
-    Serial.println("A0 >= 1.300V → Relay2 OFF (FULL CHARGED)");
+    else if (voltage < RELAY_ON_MIN_V) {
+      digitalWrite(RELAY_PIN2, LOW);
+      relay2State = false;
+      Serial.println("A0 < 1.120V (45V) → Relay2 OFF (LOW VOLTAGE)");
+    }
+  } else {
+    // 릴레이 OFF 상태일 때 → ON 조건 확인
+    if (voltage >= RELAY_ON_MIN_V && voltage <= RELAY_ON_MAX_V) {
+      digitalWrite(RELAY_PIN2, HIGH);
+      relay2State = true;
+      Serial.println("A0 1.120V~1.245V (45V~50V) → Relay2 ON (Charging)");
+    }
   }
 
   // 3초마다 상태 출력
@@ -91,4 +95,3 @@ void gpio_run() {
     Serial.println(relay2State ? "ON" : "OFF");
   }
 }
-
