@@ -256,6 +256,9 @@ BLECharacteristic batteryFullChar;
 BLECharacteristic chargerOKChar;
 BLECharacteristic jumperRelayChar;
 BLECharacteristic robotRelayChar;
+BLECharacteristic dockingStatusChar;
+
+byte lastDockingStatus = 0xFF;
 
 char nonce[9];
 char tokenHex[17];
@@ -281,33 +284,41 @@ bool rssiBufferFilled = false;
 #define RELAY_PIN 4
 unsigned long lastReportTime = 0;
 
-int getAverageRSSI() {
+int getAverageRSSI()
+{
   int count = rssiBufferFilled ? RSSI_BUFFER_SIZE : rssiIndex;
-  if (count == 0) return -100;
+  if (count == 0)
+    return -100;
   long sum = 0;
-  for (int i = 0; i < count; i++) sum += rssiBuffer[i];
+  for (int i = 0; i < count; i++)
+    sum += rssiBuffer[i];
   return sum / count;
 }
 
-void addRSSIValue(int rssi) {
+void addRSSIValue(int rssi)
+{
   rssiBuffer[rssiIndex++] = rssi;
-  if (rssiIndex >= RSSI_BUFFER_SIZE) {
+  if (rssiIndex >= RSSI_BUFFER_SIZE)
+  {
     rssiIndex = 0;
     rssiBufferFilled = true;
   }
 }
 
-void generateHMAC_SHA256(const char *key, const char *message, char *outputHex) {
+void generateHMAC_SHA256(const char *key, const char *message, char *outputHex)
+{
   uint8_t hmacResult[32];
   HMAC hmac;
   hmac.init((const uint8_t *)key, strlen(key));
   hmac.update((const uint8_t *)message, strlen(message));
   hmac.finalize(hmacResult, sizeof(hmacResult));
-  for (int i = 0; i < 8; ++i) sprintf(&outputHex[i * 2], "%02x", hmacResult[i]);
+  for (int i = 0; i < 8; ++i)
+    sprintf(&outputHex[i * 2], "%02x", hmacResult[i]);
   outputHex[16] = '\0';
 }
 
-void sendStatus(const char* label, byte value) {
+void sendStatus(const char *label, byte value)
+{
   Serial1.print("ST,0,");
   Serial1.print(label);
   Serial1.print(",");
@@ -315,35 +326,41 @@ void sendStatus(const char* label, byte value) {
   Serial1.println(",ED");
 }
 
-void rs485_reportRelayState(byte relayState) {
+void rs485_reportRelayState(byte relayState)
+{
   Serial1.print("ST,0,BMS_STATION_BAT_ON,");
   Serial1.print(relayState == 1 ? "1" : "0");
   Serial1.println(",ED");
 }
 
-void ble_init() {
-  for (int i = 0; i < 5; i++) {
-    if (BLE.begin()) {
-      Serial.println("✅ BLE 초기화 완료");
+void ble_init()
+{
+  for (int i = 0; i < 5; i++)
+  {
+    if (BLE.begin())
+    {
+      Serial.println("BLE 초기화 완료");
       BLE.scan(true);
       robotState = SCANNING;
       return;
     }
-    Serial.println("⚠️ BLE 초기화 실패 - 재시도 중...");
+    Serial.println("BLE 초기화 실패 - 재시도 중...");
     delay(200);
   }
-  Serial.println("❌ BLE 초기화 실패 (최종)");
+  Serial.println("BLE 초기화 실패 (최종)");
 }
 
-void ble_reset() {
-  if (peripheral && peripheral.connected()) {
+void ble_reset()
+{
+  if (peripheral && peripheral.connected())
+  {
     peripheral.disconnect();
     delay(100);
   }
   BLE.stopScan();
   delay(100);
 
-  Serial.println("🔄 BLE 리셋 중...");
+  Serial.println("BLE 리셋 중...");
 
   authenticated = false;
   robotState = IDLE;
@@ -366,92 +383,120 @@ void ble_reset() {
   robotState = SCANNING;
 }
 
-void ble_run() {
+void ble_run()
+{
   unsigned long currentMillis = millis();
 
-  if (robotState == SCANNING) {
+  if (robotState == SCANNING)
+  {
     BLEDevice device = BLE.available();
-    if (device && device.hasLocalName() && device.localName() == targetLocalName) {
+    if (device && device.hasLocalName() && device.localName() == targetLocalName)
+    {
       int rssi = device.rssi();
       addRSSIValue(rssi);
 
-      if (millis() - lastRSSILog >= 1000) {
-        Serial.print("📶 RSSI(평균): ");
+      if (millis() - lastRSSILog >= 1000)
+      {
+        Serial.print("RSSI(평균): ");
         Serial.println(getAverageRSSI());
         lastRSSILog = millis();
       }
 
-      if (getAverageRSSI() >= -70) {
-        if (rssiOkStart == 0) rssiOkStart = millis();
-        if (millis() - rssiOkStart >= 10000) {
+      if (getAverageRSSI() >= -70)
+      {
+        if (rssiOkStart == 0)
+          rssiOkStart = millis();
+        if (millis() - rssiOkStart >= 10000)
+        {
           rssiOkStart = 0;
           BLE.stopScan();
-          Serial.println("📶 RSSI OK → 연결 시도 중...");
+          Serial.println("RSSI OK → 연결 시도 중...");
           robotState = CONNECTING;
 
-          if (device.connect()) {
-            Serial.println("✅ 연결 성공!");
+          if (device.connect())
+          {
+            Serial.println("연결 성공!");
             peripheral = device;
 
-            if (peripheral.discoverAttributes()) {
-              Serial.println("🔍 GATT 속성 탐색 완료");
+            if (peripheral.discoverAttributes())
+            {
+              Serial.println("GATT 속성 탐색 완료");
 
-              nonceChar       = peripheral.characteristic("2A03");
-              authTokenChar   = peripheral.characteristic("2A04");
+              nonceChar = peripheral.characteristic("2A03");
+              authTokenChar = peripheral.characteristic("2A04");
               batteryFullChar = peripheral.characteristic("2A01");
-              chargerOKChar   = peripheral.characteristic("2A02");
+              chargerOKChar = peripheral.characteristic("2A02");
               jumperRelayChar = peripheral.characteristic("AA05");
-              robotRelayChar  = peripheral.characteristic("AA10");
+              robotRelayChar = peripheral.characteristic("AA10");
+              dockingStatusChar = peripheral.characteristic("AA06");
 
-              if (nonceChar && nonceChar.canRead() && authTokenChar && authTokenChar.canWrite()) {
+              if (nonceChar && nonceChar.canRead() && authTokenChar && authTokenChar.canWrite())
+              {
                 byte buf[20];
                 int len = nonceChar.readValue(buf, sizeof(buf));
-                if (len > 0 && len < sizeof(nonce)) {
+                if (len > 0 && len < sizeof(nonce))
+                {
                   memcpy(nonce, buf, len);
                   nonce[len] = '\0';
 
-                  Serial.print("📩 nonce 수신: ");
+                  Serial.print("nonce 수신: ");
                   Serial.println(nonce);
 
                   generateHMAC_SHA256(sharedKey, nonce, tokenHex);
-                  Serial.print("➡️ 토큰 전송: ");
+                  Serial.print("토큰 전송: ");
                   Serial.println(tokenHex);
 
-                  if (authTokenChar.writeValue((const unsigned char *)tokenHex, 16)) {
+                  if (authTokenChar.writeValue((const unsigned char *)tokenHex, 16))
+                  {
                     authenticated = true;
                     robotState = CONNECTED;
                     lastStatusRead = millis();
                     lastRs485Report = millis();
                     rssiBadStart = 0;
-                  } else {
-                    Serial.println("❌ 토큰 전송 실패");
+                  }
+                  else
+                  {
+                    Serial.println("토큰 전송 실패");
                     ble_reset();
                   }
-                } else {
-                  Serial.println("❌ nonce 읽기 실패");
+                }
+                else
+                {
+                  Serial.println("nonce 읽기 실패");
                   ble_reset();
                 }
-              } else {
-                Serial.println("❌ GATT 인증 캐릭터리스틱 유효성 실패");
+              }
+              else
+              {
+                Serial.println("GATT 인증 캐릭터리스틱 유효성 실패");
                 ble_reset();
               }
-            } else {
-              Serial.println("❌ GATT 탐색 실패");
+            }
+            else
+            {
+              Serial.println("GATT 탐색 실패");
               ble_reset();
             }
-          } else {
-            Serial.println("❌ 연결 실패");
+          }
+          else
+          {
+            Serial.println("연결 실패");
             robotState = SCANNING;
             BLE.scan(true);
           }
         }
-      } else {
+      }
+      else
+      {
         rssiOkStart = 0;
       }
     }
-  } else if (robotState == CONNECTED) {
-    if (!peripheral.connected()) {
-      Serial.println("🔌 연결 끊김 → 재스캔");
+  }
+  else if (robotState == CONNECTED)
+  {
+    if (!peripheral.connected())
+    {
+      Serial.println("연결 끊김 → 재스캔");
       sendStatus("BMSBLE", 0);
       lastBLEState = 0;
       ble_reset();
@@ -459,34 +504,63 @@ void ble_run() {
     }
 
     // 연결 후 RSSI 감시
-    if (millis() - lastRSSILog >= 1000) {
+    if (millis() - lastRSSILog >= 1000)
+    {
       int rssi = peripheral.rssi();
-      Serial.print("📉 연결 후 RSSI: ");
+      Serial.print("연결 후 RSSI: ");
       Serial.println(rssi);
       lastRSSILog = millis();
 
-      if (rssi <= -80) {
-        Serial.println("❌ RSSI 너무 약함 → 연결 해제");
+      if (rssi <= -80)
+      {
+        Serial.println("RSSI 너무 약함 → 연결 해제");
         ble_reset();
         return;
       }
     }
 
     // 5초마다 릴레이 상태 전송
-    if (currentMillis - lastReportTime >= 5000) {
+    if (currentMillis - lastReportTime >= 5000)
+    {
       lastReportTime = currentMillis;
+
+      // Docking 상태 읽기
+      if (dockingStatusChar && dockingStatusChar.canRead())
+      {
+        byte dockingValue;
+        if (dockingStatusChar.readValue(dockingValue))
+        {
+          if (dockingValue != lastDockingStatus)
+          {
+            Serial.print("Docking 상태 수신: ");
+            Serial.println(dockingValue);
+            lastDockingStatus = dockingValue;
+            sendStatus("DOCK", dockingValue);
+          }
+        }
+        else
+        {
+          Serial.println("Docking 상태 읽기 실패");
+        }
+      }
       byte relayState = digitalRead(RELAY_PIN);
 
-      if (peripheral.connected() && robotRelayChar && robotRelayChar.canWrite()) {
-        if (!robotRelayChar.writeValue((uint8_t)relayState)) {
-          Serial.println("⚠️ 릴레이 상태 전송 실패 → 재연결 시도");
+      if (peripheral.connected() && robotRelayChar && robotRelayChar.canWrite())
+      {
+        if (!robotRelayChar.writeValue((uint8_t)relayState))
+        {
+          Serial.println("릴레이 상태 전송 실패 → 재연결 시도");
           ble_reset();
           return;
-        } else {
+        }
+        else
+        {
           rs485_reportRelayState(relayState);
         }
-      } else {
-        Serial.println("⚠️ robotRelayChar 유효하지 않음 → 재연결 시도");
+      }
+      else
+      {
+        Serial.println("robotRelayChar 유효하지 않음 → 재연결 시도");
         ble_reset();
         return;
       }
@@ -494,15 +568,23 @@ void ble_run() {
   }
 }
 
-bool getBleConnectionState() {
+bool getBleConnectionState()
+{
   return (robotState == CONNECTED && peripheral.connected());
 }
-bool getBatteryFullStatus() {
+bool getBatteryFullStatus()
+{
   return lastBatteryFull;
 }
-bool getChargerOkStatus() {
+bool getChargerOkStatus()
+{
   return lastChargerOK;
 }
-bool getChargerRelayStatus() {
+bool getChargerRelayStatus()
+{
   return lastJumperRelay;
+}
+bool getDockingStatus()
+{
+  return lastDockingStatus == 1;
 }

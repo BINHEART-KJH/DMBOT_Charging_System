@@ -10,5 +10,5 @@ bool getBleConnectionState();
 bool getBatteryFullStatus();
 bool getChargerOkStatus();
 bool getChargerRelayStatus();
-
+bool getDockingStatus();
 #endif
