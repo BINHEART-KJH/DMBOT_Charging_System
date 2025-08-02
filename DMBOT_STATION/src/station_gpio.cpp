@@ -128,8 +128,8 @@ const float alpha = 0.03; // 더 작을수록 반응이 느리지만 안정적
 // === 전압 조건 ===
 const float DISCONNECT_V             = 0.600;   // 단선 판단 기준
 const float CHARGE_START_MIN_V      = 0.850;   // 충전 시작 하한
-const float CHARGE_START_MAX_V      = 1.300;   // 충전 시작 상한
-const float CHARGE_STOP_V           = 1.325;   // 과충전 판단 기준
+const float CHARGE_START_MAX_V      = 1.275;   // 충전 시작 상한
+const float CHARGE_STOP_V           = 1.320;   // 과충전 판단 기준
 
 
 // === 필터링된 전압 읽기 함수 ===
@@ -217,7 +217,7 @@ void gpio_run() {
   }
 
   // 1초마다 상태 출력
-  if (millis() - lastPrintTime >= 3000) {
+  if (millis() - lastPrintTime >= 1000) {
     lastPrintTime = millis();
     Serial.print("[ADC] A0 Voltage: ");
     Serial.print(voltage, 3);

@@ -270,7 +270,7 @@ BLEByteCharacteristic batteryFullChar("2A01", BLERead);
 BLEByteCharacteristic chargerOkChar("2A02", BLERead);
 BLEByteCharacteristic jumperRelayChar("AA05", BLERead);  // Station에서 Relay 상태 전달용
 BLEByteCharacteristic robotRelayChar("AA10", BLEWrite);  // Robot에 Relay 제어 신호 전달
-BLEByteCharacteristic dockingStatusChar("AA06", BLERead);  // Docking 상태 전달용
+//BLEByteCharacteristic dockingStatusChar("AA06", BLERead);  // Docking 상태 전달용
 
 // 랜덤 nonce 생성
 void generateRandomNonce(char *buffer, size_t len) {
@@ -340,7 +340,7 @@ void setupGattService() {
     dmService.addCharacteristic(chargerOkChar);
     dmService.addCharacteristic(jumperRelayChar);
     dmService.addCharacteristic(robotRelayChar);  // Robot Relay 상태 제어 특성 추가
-    dmService.addCharacteristic(dockingStatusChar);
+    //dmService.addCharacteristic(dockingStatusChar);
 
     BLE.addService(dmService);
     nonceChar.setValue(nonce);
@@ -351,7 +351,7 @@ void setupGattService() {
     batteryFullChar.writeValue(digitalRead(BATTERY_FULL_PIN));
     chargerOkChar.writeValue(digitalRead(CHARGER_OK_PIN));
     jumperRelayChar.writeValue(digitalRead(RELAY_PIN));  // 초기 상태 전송
-    dockingStatusChar.writeValue(digitalRead(DOCKING_PIN));
+    //dockingStatusChar.writeValue(digitalRead(DOCKING_PIN));
 
     delay(200);
 }
@@ -361,7 +361,7 @@ void updateGattValues() {
     batteryFullChar.writeValue(digitalRead(BATTERY_FULL_PIN));
     chargerOkChar.writeValue(digitalRead(CHARGER_OK_PIN));
     jumperRelayChar.writeValue(digitalRead(RELAY_PIN));  // Relay 상태 갱신
-    dockingStatusChar.writeValue(digitalRead(DOCKING_PIN));  // docking_pin 상태 갱신
+    //dockingStatusChar.writeValue(digitalRead(DOCKING_PIN));  // docking_pin 상태 갱신
 
 }
 

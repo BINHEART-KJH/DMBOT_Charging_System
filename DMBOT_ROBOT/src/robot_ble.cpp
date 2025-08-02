@@ -511,7 +511,7 @@ void ble_run()
       Serial.println(rssi);
       lastRSSILog = millis();
 
-      if (rssi <= -80)
+      if (rssi <= -95)
       {
         Serial.println("RSSI 너무 약함 → 연결 해제");
         ble_reset();
