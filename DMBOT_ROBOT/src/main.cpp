@@ -4,7 +4,7 @@
 #include "robot_gpio.h"
 #include "robot_rs485.h"
 
-#include "mbed.h"  // 🛡️ Watchdog 타이머를 위해 필요 (Nano RP2040용)
+#include "mbed.h"  // Watchdog 타이머를 위해 필요 (Nano RP2040용)
 
 mbed::Watchdog &wdt = mbed::Watchdog::get_instance();
 
@@ -21,12 +21,12 @@ void setup() {
   ble_init();
   delay(100);
 
-  // 🛡️ Watchdog 타이머 시작 (예: 5초)
+  //Watchdog 타이머 시작 (예: 5초)
   wdt.start(5000);
 }
 
 void loop() {
-  wdt.kick();         // 🟢 Watchdog 리셋 → 시스템이 살아있다는 신호
+  wdt.kick();         // Watchdog 리셋 → 시스템이 살아있다는 신호
 
   rs485_run();        // RS485 수신 처리
   ble_run();          // BLE FSM 실행
