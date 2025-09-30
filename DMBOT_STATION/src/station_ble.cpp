@@ -287,6 +287,7 @@ void ble_run() {
 
 */
 
+
 #include <Arduino.h>
 #include <ArduinoBLE.h>
 #include "station_gpio.h"
@@ -306,7 +307,7 @@ static inline void hardResetStation() {
   // mbed Watchdog을 1ms로 시작해 하드 리셋 유도
   mbed::Watchdog &wd = mbed::Watchdog::get_instance();
   wd.start(1);
-  while (true) { /* wait for reset */ }
+  while (true) {  }
 #else
   // 다른 코어라면 NVIC 리셋로 폴백
   NVIC_SystemReset();

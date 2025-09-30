@@ -9,7 +9,7 @@ StationState lastState = IDLE;
 void ble_rs485_run() {}  // 사용하지 않음
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   delay(500);
 
   gpio_init();

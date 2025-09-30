@@ -222,7 +222,7 @@ void gpio_run() {
       Serial.print(relay2State ? "ON" : "OFF");
       Serial.println(" | BootAssist:Y");
     }
-    return; // ★ 부스팅 중에는 일반 로직을 실행하지 않음(단선 오탐 방지)
+    return; //부스팅 중에는 일반 로직을 실행하지 않음(단선 오탐 방지)
   }
 
   // === 일반 로직 시작 ===
