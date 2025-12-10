@@ -131,7 +131,7 @@ const float alpha = 0.03; // 더 작을수록 반응이 느리지만 안정적
 const float DISCONNECT_V          = 0.600;   // 단선 판단 기준
 const float CHARGE_START_MIN_V    = 0.850;   // 충전 시작 하한
 const float CHARGE_START_MAX_V    = 1.275;   // 충전 시작 상한
-const float CHARGE_STOP_V         = 1.330;   // 과충전 판단 기준
+const float CHARGE_STOP_V         = 1.325;   // 과충전 판단 기준
 
 // === 부팅 부스팅(전원 ON 직후 10초 강제 ON) ===
 const unsigned long BOOT_ASSIST_MS = 10000;  // 부스팅 지속시간 (10s)
