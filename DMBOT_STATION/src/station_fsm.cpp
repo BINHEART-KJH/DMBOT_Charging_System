@@ -24,7 +24,7 @@ void state_update(bool isAdvertising) {
         if (authSuccess) {
           newState = CONNECTED;
         } else {
-          newState = CONNECTING;  // ✅ 인증 전 연결된 상태
+          newState = CONNECTING;
         }
       } else if (isAdvertising) {
         newState = ADVERTISING;
