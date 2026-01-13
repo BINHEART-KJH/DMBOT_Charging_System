@@ -45,12 +45,12 @@ static void processFrameLine(const String& line) {
   if (line.startsWith("ST,0,BMS_ROBOT_CTRL_BAT_ON,")) {
     if (line.endsWith(",1,ED")) {
       setRelay(true); // Relay ON
-      Serial.println("RS485: 로봇 릴레이 ON (충전 시작)");
+      Serial.println("RS485: robot relay ON");
     } else if (line.endsWith(",0,ED")) {
       setRelay(false); // Relay OFF
-      Serial.println("RS485: 로봇 릴레이 OFF (충전 중단)");
+      Serial.println("RS485: robot relay OFF");
     } else {
-      Serial.println("RS485: 잘못된 릴레이 명령 수신");
+      Serial.println("RS485: Wrong relay command value");
     }
     return;
   }
@@ -97,6 +97,10 @@ void rs485_report()
   Serial1.print(bleConnected ? "1" : "0");
   Serial1.println(",ED");
 
+  if(bleConnected == 0){
+     setRelay(false);
+     Serial.println("RS485: robot relay OFF");
+  }
   // //배터리 Full 여부
   // Serial1.print("ST,0,BMS_STATION_BAT_FULL,");
   // Serial1.print(getBatteryFullStatus() ? "1" : "0");
