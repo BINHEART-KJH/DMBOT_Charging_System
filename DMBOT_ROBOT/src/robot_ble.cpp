@@ -594,11 +594,11 @@ const uint8_t        AUTH_FAIL_HARDRESET_THRESHOLD = 3;
 const unsigned long  AUTH_FAIL_DECAY_MS            = 120000UL;
 
 // ===================== RSSI 연결/해제 정책(연속 N회) =====================
-const long    SCAN_RSSI_GOOD_DBM     = -50;
+const long    SCAN_RSSI_GOOD_DBM     = -75;
 const uint8_t SCAN_RSSI_GOOD_CONSEC  = 10;
 static uint8_t scanRssiGoodStreak = 0;
 
-const long    CONNECTED_RSSI_BAD_DBM    = -65;
+const long    CONNECTED_RSSI_BAD_DBM    = -95;
 const uint8_t CONNECTED_RSSI_BAD_CONSEC = 5;
 static uint8_t connRssiBadStreak = 0;
 
@@ -717,7 +717,7 @@ void rs485_reportRelayState(byte relayState) {
   Serial1.println(",ED");
 }
 
-// ✅ 릴레이 RS485 보고: 변화 있을 때만 1회
+// 릴레이 RS485 보고: 변화 있을 때만 1회
 static byte g_lastReportedRelay = 0xFF;
 static inline void rs485_reportRelayStateOnce(byte relayState) {
   if (relayState == g_lastReportedRelay) return;
@@ -725,7 +725,7 @@ static inline void rs485_reportRelayStateOnce(byte relayState) {
   rs485_reportRelayState(relayState);
 }
 
-// ✅ BLE 끊기면 “무조건 OFF” (즉시)
+// BLE 끊기면 “무조건 OFF” (즉시)
 static inline void forceRelayOffAndReport(const char* reason) {
   (void)reason;
 
@@ -807,7 +807,7 @@ void ble_init() {
 }
 
 void ble_reset() {
-  // ✅ 리셋 진입 순간에도 무조건 OFF + 0 보고
+  // 리셋 진입 순간에도 무조건 OFF + 0 보고
   forceRelayOffAndReport("ble_reset()");
 
   if (peripheral && peripheral.connected()) {
@@ -987,7 +987,7 @@ void ble_run() {
 
   } else if (robotState == CONNECTED) {
 
-    // ✅ 연결 끊김 즉시 OFF + 0 보고 후 리셋
+    // 연결 끊김 즉시 OFF + 0 보고 후 리셋
     if (!peripheral.connected()) {
       Serial.println("Disconnected -> rescan");
       sendStatus("BMSBLE", 0);
@@ -1058,7 +1058,7 @@ void ble_run() {
           ble_reset();
           return;
         } else {
-          // ✅ 주기 보고도 “변화 있을 때만”
+          // 주기 보고도 “변화 있을 때만”
           rs485_reportRelayStateOnce(relayState);
         }
       } else {
