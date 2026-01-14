@@ -1071,7 +1071,6 @@ void ble_run() {
       }
     }
   }
-
   if (robotState != CONNECTED) {
     if ((now - noStationBaselineMs) > HARD_RESET_NO_ADV_MS) {
       hardReset("No station adv for long while (not connected)");
