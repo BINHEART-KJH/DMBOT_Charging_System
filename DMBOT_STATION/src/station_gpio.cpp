@@ -154,6 +154,8 @@ void gpio_run() {
 }
 */
 
+//=========================== 광주 TP , 트렌토 충전 시스템 ===========================
+//========================== 24V+ 기준 ==========================
 #include <Arduino.h>
 #include "station_gpio.h"
 #include "station_fsm.h"
@@ -343,13 +345,13 @@ static float getFilteredVoltage()
 // ======================= 릴레이 제어(공식 통로) =======================
 void station_setRelay(bool on, const char* reason)
 {
-  bool cur = (digitalRead(RELAY_PIN) == HIGH);
+  bool cur = (digitalRead(RELAY_PIN2) == HIGH);
   if (cur == on) return;
 
-  digitalWrite(RELAY_PIN, on ? HIGH : LOW);
+  digitalWrite(RELAY_PIN2, on ? HIGH : LOW);
 
   Serial.print(reason ? reason : "Relay set");
-  Serial.print(" | Relay(D7): ");
+  Serial.print(" | Relay(D4): ");
   Serial.println(on ? "1(HIGH)" : "0(LOW)");
 
 #if ENABLE_RS485
@@ -362,8 +364,8 @@ void station_setRelay(bool on, const char* reason)
 void gpio_init() {
   pinMode(DOCKING_PIN, INPUT);
 
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);
+  pinMode(RELAY_PIN2, OUTPUT);
+  digitalWrite(RELAY_PIN2, LOW);
 
   pinMode(BUILTIN_LED, OUTPUT);
   digitalWrite(BUILTIN_LED, LOW);
@@ -393,20 +395,13 @@ void gpio_run() {
   float voltage = getFilteredVoltage();
   unsigned long now = millis();
 
-
-    // 예전 로직(참고용):
-    // if (voltage <= DISCONNECT_V) { ... }
-    // else if (voltage >= CHARGE_STOP_V) { ... }
-    // else if (voltage in range) { ... }
-  
-
   // 1초마다 상태 출력
   if (now - lastPrintTime >= 1000) {
     lastPrintTime = now;
     Serial.print("[ADC] VIN: ");
     Serial.print(voltage, 2);
-    Serial.print(" V | Relay(D7): ");
-    Serial.print(digitalRead(RELAY_PIN) == HIGH ? "1(HIGH)" : "0(LOW)");
+    Serial.print(" V | Relay(D4): ");
+    Serial.print(digitalRead(RELAY_PIN2) == HIGH ? "1(HIGH)" : "0(LOW)");
     Serial.println();
   }
 }

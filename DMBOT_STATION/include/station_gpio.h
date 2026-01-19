@@ -30,7 +30,8 @@ void gpio_run();
 #define BATTERY_FULL_PIN 5
 #define CHARGER_OK_PIN   6
 
-#define RELAY_PIN        7 
+#define RELAY_PIN        7
+#define RELAY_PIN2       4
 #define BUILTIN_LED      LED_BUILTIN
 
 #define ADC_PIN          A0 

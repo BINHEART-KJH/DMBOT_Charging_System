@@ -1059,7 +1059,8 @@ void ble_run() {
           return;
         } else {
           // 주기 보고도 “변화 있을 때만”
-          rs485_reportRelayStateOnce(relayState);
+         // rs485_reportRelayStateOnce(relayState);
+         rs485_reportRelayState(relayState);
         }
       } else {
         Serial.println("robotRelayChar invalid -> reconnect");
