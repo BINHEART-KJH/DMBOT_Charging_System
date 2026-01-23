@@ -1,4 +1,4 @@
-/*#include <Arduino.h>
+#include <Arduino.h>
 #include <ArduinoBLE.h>
 #include "robot_fsm.h"
 #include "robot_ble.h"
@@ -61,16 +61,16 @@ const unsigned long  AUTH_FAIL_DECAY_MS            = 120000UL;
 // 스캔 단계(인증 전): 필터 결과가 이 값 이상을 연속 N회 만족하면 연결 시도
 //EOS : -70
 //TP : -50
-//const long    SCAN_RSSI_GOOD_DBM     = -70;  // -60 이상이면 양호
-const long    SCAN_RSSI_GOOD_DBM     = -50;  // -60 이상이면 양호
+const long    SCAN_RSSI_GOOD_DBM     = -80;  // -60 이상이면 양호
+//const long    SCAN_RSSI_GOOD_DBM     = -50;  // -60 이상이면 양호
 const uint8_t SCAN_RSSI_GOOD_CONSEC  = 10;   // 연속 10회(광고 프레임 기준)
 static uint8_t scanRssiGoodStreak = 0;
 
 // 연결 후: 필터 결과가 이 값 이하를 연속 N회 만족하면 연결 해제
 //EOS : -95
 //TP : -65
-//const long    CONNECTED_RSSI_BAD_DBM    = -95; // 연속 해제
-const long    CONNECTED_RSSI_BAD_DBM    = -65; // 연속 해제
+const long    CONNECTED_RSSI_BAD_DBM    = -95; // 연속 해제
+//const long    CONNECTED_RSSI_BAD_DBM    = -65; // 연속 해제
 const uint8_t CONNECTED_RSSI_BAD_CONSEC = 5;
 static uint8_t connRssiBadStreak = 0;
 
@@ -532,8 +532,9 @@ bool getChargerRelayStatus() {
 bool getDockingStatus() {
   return lastDockingStatus == 1;
 }
-*/
 
+
+/*
 #include <Arduino.h>
 #include <ArduinoBLE.h>
 #include "robot_fsm.h"
@@ -1097,3 +1098,4 @@ bool getChargerRelayStatus() {
 bool getDockingStatus() {
   return lastDockingStatus == 1;
 }
+*/
