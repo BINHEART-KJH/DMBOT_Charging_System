@@ -764,7 +764,7 @@ void onRobotRelayWritten(BLEDevice central, BLECharacteristic characteristic) {
   Serial.print("Received Relay state (BLE): ");
   Serial.println(relayState);
 
-  // 0/1만 허용. 나머지(128 등)는 무시
+  // 0/1
   if (relayState != 0 && relayState != 1) {
     Serial.print("Ignored invalid relayState: ");
     Serial.println(relayState);
