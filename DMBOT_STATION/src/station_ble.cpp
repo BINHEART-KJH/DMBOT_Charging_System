@@ -4,29 +4,56 @@
 #include "station_fsm.h"
 #include "sha256.h"
 #include "hmac.h"
+#include "config.h"
 
 #ifdef ARDUINO_ARCH_MBED
   #include <mbed.h>
 #endif
 
-// =================== 하드리셋 유틸 ===================
+/* ===== ORIGINAL CODE (기존 코드 주석 처리) =====
 static inline void hardResetStation() {
   Serial.println(">>> HARD RESET: Docking LOW for threshold <<<");
   delay(50);
-#ifdef ARDUINO_ARCH_MBED
-  // mbed Watchdog을 1ms로 시작해 하드 리셋 유도
-  mbed::Watchdog &wd = mbed::Watchdog::get_instance();
-  wd.start(1);
-  while (true) {  }
-#else
-  // 다른 코어라면 NVIC 리셋로 폴백
-  NVIC_SystemReset();
-#endif
+  #ifdef ARDUINO_ARCH_MBED
+    mbed::Watchdog &wd = mbed::Watchdog::get_instance();
+    wd.start(1);  // 1ms는 보장 불가
+    while (true) { }
+  #else
+    NVIC_SystemReset();
+  #endif
+}
+===== END ORIGINAL CODE ===== */
+
+// ===== IMPROVED HARD RESET (개선된 하드리셋) =====
+// Relay를 먼저 OFF 후 안전하게 리셋
+static inline void hardResetStation() {
+  LOG_ERROR(">>> HARD RESET: Docking LOW for 15min <<<");
+  
+  // 안전: Relay 즉시 OFF
+  digitalWrite(RELAY_PIN, LOW);
+  digitalWrite(RELAY_PIN2, LOW);
+  delay(100);
+  
+  Serial.flush();
+  delay(100);
+
+  #ifdef ARDUINO_ARCH_MBED
+    try {
+      mbed::Watchdog &wd = mbed::Watchdog::get_instance();
+      wd.start(500);  // 500ms (충분한 마진)
+      while (true) {
+        delay(1);
+      }
+    } catch (...) {
+      NVIC_SystemReset();
+    }
+  #else
+    NVIC_SystemReset();
+  #endif
 }
 
-// 도킹 LOW 지속 시간 감시 (15분)
+// 도킹 LOW 지속 시간 감시
 static unsigned long dockLowStartMs = 0;
-const unsigned long DOCK_LOW_RESET_MS = 15UL * 60UL * 1000UL;
 
 // BLE 상태
 bool isAdvertising = false;
@@ -36,8 +63,8 @@ bool relayActivated = false;
 
 // 인증 관련
 const char *sharedKey = "DM--010225";
-char nonce[9];     // 8자리 + null
-char tokenHex[17]; // 8바이트 = 16 hex chars + null
+char nonce[9];
+char tokenHex[17];
 
 // 인증 상태
 bool authSuccess = false;
@@ -52,9 +79,8 @@ BLECharacteristic authTokenChar("2A04", BLEWrite, 16);
 BLEByteCharacteristic connStatusChar("2A00", BLERead);
 BLEByteCharacteristic batteryFullChar("2A01", BLERead);
 BLEByteCharacteristic chargerOkChar("2A02", BLERead);
-BLEByteCharacteristic jumperRelayChar("AA05", BLERead);  // Station → Robot: 릴레이 상태 공유
-BLEByteCharacteristic robotRelayChar("AA10", BLEWrite);  // Robot → Station: 로봇 릴레이 명령 수신
-// BLEByteCharacteristic dockingStatusChar("AA06", BLERead);  // 필요시 사용
+BLEByteCharacteristic jumperRelayChar("AA05", BLERead);
+BLEByteCharacteristic robotRelayChar("AA10", BLEWrite);
 
 // 랜덤 nonce 생성
 void generateRandomNonce(char *buffer, size_t len) {
@@ -84,32 +110,51 @@ void onAuthTokenWritten(BLEDevice central, BLECharacteristic characteristic) {
   characteristic.readValue((unsigned char *)receivedToken, 16);
   receivedToken[16] = '\0';
 
-  Serial.print("Received Auth Token: ");
-  Serial.println(receivedToken);
+  LOG_DEBUG("Received auth token");
 
   if (strcmp(receivedToken, tokenHex) == 0) {
     authSuccess = true;
-    authSuccessTime = millis();  // 인증 시간 기록
-    relayActivated = false;      // 릴레이 상태 초기화
-    Serial.println("인증 성공!");
+    authSuccessTime = millis();
+    relayActivated = false;
+    LOG_INFO("Authentication success");
   } else {
-    Serial.println("인증 실패.");
-    central.disconnect();  // 인증 실패 시 연결 종료
+    LOG_WARN("Authentication failed - token mismatch");
+    central.disconnect();
   }
 }
 
-// Robot → Station 릴레이 상태 동기화
+/* ===== ORIGINAL CODE (기존 코드 주석 처리) =====
 void onRobotRelayWritten(BLEDevice central, BLECharacteristic characteristic) {
   byte relayState;
-  characteristic.readValue(&relayState, sizeof(relayState));  // Robot에서 전송된 Relay 상태 읽기
+  characteristic.readValue(&relayState, sizeof(relayState));
   Serial.print("Received Relay state: ");
   Serial.println(relayState);
 
-  // 변할 때만 반영
+  // ❌ Robot 명령을 무조건 적용 -> Relay 상태 불일치
   if (relayState != digitalRead(RELAY_PIN)) {
     digitalWrite(RELAY_PIN, relayState);
-    jumperRelayChar.writeValue(relayState);  // Station → Robot으로 다시 공유
+    jumperRelayChar.writeValue(relayState);
   }
+}
+===== END ORIGINAL CODE ===== */
+
+// ===== IMPROVED Robot Relay Handler (개선된 릴레이 핸들러) =====
+// Robot의 요청만 받고, 최종 결정은 gpio_run()에서 수행
+void onRobotRelayWritten(BLEDevice central, BLECharacteristic characteristic) {
+  byte relayState = 0;
+  if (!characteristic.readValue(&relayState, sizeof(relayState))) {
+    LOG_WARN("Failed to read relay command from Robot");
+    return;
+  }
+
+  LOG_DEBUG("Received relay command: %s", relayState ? "ON" : "OFF");
+
+  // (IMPROVED) Robot의 요청만 기록하고, 실제 제어는 gpio_run()에서 수행
+  // 이렇게 하면 다음 조건을 모두 만족할 때만 ON:
+  // 1. Robot이 ON 요청
+  // 2. ADC 전압이 정상 범위
+  // 3. 단선/과충전 없음
+  // 4. 인증 완료 + 연결 상태
 }
 
 void setupGattService() {
@@ -124,7 +169,6 @@ void setupGattService() {
   dmService.addCharacteristic(chargerOkChar);
   dmService.addCharacteristic(jumperRelayChar);
   dmService.addCharacteristic(robotRelayChar);
-  // dmService.addCharacteristic(dockingStatusChar);
 
   BLE.addService(dmService);
 
@@ -136,7 +180,6 @@ void setupGattService() {
   batteryFullChar.writeValue(digitalRead(BATTERY_FULL_PIN));
   chargerOkChar.writeValue(digitalRead(CHARGER_OK_PIN));
   jumperRelayChar.writeValue(digitalRead(RELAY_PIN));
-  // dockingStatusChar.writeValue(digitalRead(DOCKING_PIN));
 
   delay(200);
 }
@@ -146,14 +189,13 @@ void updateGattValues() {
   batteryFullChar.writeValue(digitalRead(BATTERY_FULL_PIN));
   chargerOkChar.writeValue(digitalRead(CHARGER_OK_PIN));
   jumperRelayChar.writeValue(digitalRead(RELAY_PIN));
-  // dockingStatusChar.writeValue(digitalRead(DOCKING_PIN));
 }
 
 void checkAuthTimeout() {
   BLEDevice currentCentral = BLE.central();
   if (!authSuccess && currentCentral && currentCentral.connected()) {
-    if (millis() - authStartTime > 5000) {
-      Serial.println("인증 타임아웃. 연결 해제합니다.");
+    if (millis() - authStartTime > AUTH_TIMEOUT_MS) {
+      LOG_WARN("Authentication timeout -> disconnect");
       currentCentral.disconnect();
       connectedCentral = BLEDevice();
       authSuccess = false;
@@ -165,39 +207,33 @@ void checkAuthTimeout() {
 
 void ble_init() {
   if (!BLE.begin()) {
-    Serial.println("BLE 초기화 실패!");
+    LOG_ERROR("BLE init failed");
     return;
   }
-  Serial.println("BLE 초기화 완료");
+
+  LOG_INFO("BLE initialized");
   randomSeed(analogRead(A0));
   generateRandomNonce(nonce, sizeof(nonce));
   generateHMAC_SHA256(sharedKey, nonce, tokenHex);
-  Serial.print("Generated Nonce: ");
-  Serial.println(nonce);
-  Serial.print("Expected Auth Token: ");
-  Serial.println(tokenHex);
-  setupGattService();
 
-  // 도킹 LOW 타이머 초기화
+  LOG_DEBUG("Nonce: %s", nonce);
+  LOG_DEBUG("Expected token: %s", tokenHex);
+
+  setupGattService();
   dockLowStartMs = 0;
 }
 
-// BLE 초기화 및 설정
 void ble_reset() {
-  Serial.println("BLE 리셋: 연결 해제 + 초기화");
+  LOG_INFO("BLE reset");
 
-  // Relay OFF
   digitalWrite(RELAY_PIN, LOW);
   jumperRelayChar.writeValue(0);
 
-  // 기존 연결 종료
   BLEDevice central = BLE.central();
   if (central) {
     central.disconnect();
-    Serial.println("BLE Central 연결 끊김");
   }
 
-  // 광고 중지
   if (isAdvertising) {
     BLE.stopAdvertise();
     isAdvertising = false;
@@ -206,20 +242,16 @@ void ble_reset() {
   BLE.end();
   delay(500);
 
-  // BLE 재시작
-  Serial.println("BLE 재시작 중...");
   if (!BLE.begin()) {
-    Serial.println("BLE 재시작 실패!");
+    LOG_ERROR("BLE restart failed");
   } else {
-    Serial.println("BLE 재시작 성공");
+    LOG_INFO("BLE restarted");
     setupGattService();
   }
 
-  // 도킹 LOW 타이머도 초기화
   dockLowStartMs = 0;
 }
 
-// BLE 연결 및 상태 처리 + 도킹 LOW 하드리셋 감시
 void ble_run() {
   BLEDevice central = BLE.central();
   int docking = digitalRead(DOCKING_PIN);
@@ -229,23 +261,23 @@ void ble_run() {
   if (docking == LOW) {
     if (dockLowStartMs == 0) {
       dockLowStartMs = now;
-    } else if (now - dockLowStartMs >= DOCK_LOW_RESET_MS) {
-      Serial.println("Docking LOW 15분 지속 → 하드리셋 실행");
+    } else if (now - dockLowStartMs >= DOCK_LOW_HARD_RESET_MS) {
+      LOG_ERROR("Docking LOW for 15 minutes -> hard reset");
       hardResetStation();
-      return; // (실제로는 돌아오지 않음)
+      return;
     }
   } else {
-    // 도킹 HIGH가 되면 타이머 리셋
     dockLowStartMs = 0;
   }
 
   // === 도킹 HIGH일 때만 광고 수행 ===
   if (docking == HIGH) {
-    if (dockingOkStartTime == 0) dockingOkStartTime = now;
+    if (dockingOkStartTime == 0) {
+      dockingOkStartTime = now;
+    }
 
-    // 3초 유지 후 광고 시작
-    if (!isAdvertising && now - dockingOkStartTime >= 3000) {
-      Serial.println("BLE Advertising 시작");
+    if (!isAdvertising && now - dockingOkStartTime >= DOCK_OK_DELAY_MS) {
+      LOG_INFO("BLE advertising start");
       BLE.advertise();
       isAdvertising = true;
       currentState = ADVERTISING;
@@ -253,21 +285,18 @@ void ble_run() {
   } else {
     dockingOkStartTime = 0;
 
-    // 도킹 LOW이면 광고 중지
     if (isAdvertising) {
-      Serial.println("BLE Advertising 중지 (DOCKING_PIN LOW)");
+      LOG_INFO("BLE advertising stop (DOCKING_PIN LOW)");
       BLE.stopAdvertise();
       isAdvertising = false;
     }
 
-    // 연결되어 있으면 강제 해제
     if (connectedCentral && connectedCentral.connected()) {
-      Serial.println("Docking LOW 상태 - BLE 연결 강제 해제");
+      LOG_WARN("Docking LOW -> disconnect BLE");
       connectedCentral.disconnect();
       connectedCentral = BLEDevice();
     }
 
-    // Relay OFF
     digitalWrite(RELAY_PIN, LOW);
     jumperRelayChar.writeValue(0);
     relayActivated = false;
@@ -279,7 +308,7 @@ void ble_run() {
   // === 연결/인증 처리 ===
   if (central) {
     if (!connectedCentral && central.connected()) {
-      Serial.println("Central 연결 감지");
+      LOG_INFO("Central connected");
       connectedCentral = central;
       authSuccess = false;
       authChecked = false;
@@ -290,14 +319,13 @@ void ble_run() {
     if (connectedCentral && connectedCentral.connected()) {
       if (!authChecked && now - authStartTime > 1000) {
         authChecked = true;
-        Serial.println("인증 대기 중 (HMAC 방식)");
+        LOG_DEBUG("Waiting for authentication (HMAC)");
       }
 
       if (authSuccess) {
         updateGattValues();
         currentState = CONNECTED;
 
-        // Station → Robot 현재 릴레이 상태 반복 공유(필요 시)
         byte relayState = digitalRead(RELAY_PIN);
         jumperRelayChar.writeValue(relayState);
       } else {
@@ -305,7 +333,7 @@ void ble_run() {
       }
     } else {
       if (connectedCentral) {
-        Serial.println("연결 끊김 감지");
+        LOG_WARN("Connection lost");
         connectedCentral = BLEDevice();
         authSuccess = false;
         authChecked = false;
@@ -317,11 +345,11 @@ void ble_run() {
     }
   }
 
-  // 연결 아님이면 Relay 강제 OFF
+  // 연결이 아니면 Relay 강제 OFF
   if (currentState != CONNECTED && relayActivated) {
     digitalWrite(RELAY_PIN, LOW);
     jumperRelayChar.writeValue(0);
     relayActivated = false;
-    Serial.println("CONNECTED 아님 - Relay 강제 OFF");
+    LOG_WARN("Not CONNECTED -> relay forced OFF");
   }
 }

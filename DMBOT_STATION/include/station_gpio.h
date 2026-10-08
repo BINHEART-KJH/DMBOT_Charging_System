@@ -2,6 +2,7 @@
 #define STATION_GPIO_H
 
 #include <Arduino.h>
+#include "config.h"
 
 // GPIO 핀 정의
 #define DOCKING_PIN      8
@@ -10,11 +11,10 @@
 #define RELAY_PIN2       4
 #define RELAY_PIN        7
 #define BUILTIN_LED      LED_BUILTIN
-
-#define ADC_PIN    A0
+#define ADC_PIN          A0
 
 // GPIO 관련 함수
 void gpio_init();
 void gpio_run();
 
-#endif
+#endif // STATION_GPIO_H

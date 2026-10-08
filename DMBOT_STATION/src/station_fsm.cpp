@@ -1,6 +1,7 @@
 #include "station_fsm.h"
 #include "station_gpio.h"
-#include "station_ble.h"  // authSuccess를 사용하기 위해
+#include "station_ble.h"
+#include "config.h"
 
 StationState currentState = IDLE;
 
@@ -35,13 +36,15 @@ void state_update(bool isAdvertising) {
 
     if (newState != currentState) {
       currentState = newState;
-      Serial.print("FSM changed → ");
+      Serial.print("[FSM] State changed -> ");
       switch (currentState) {
         case IDLE: Serial.println("IDLE"); break;
         case DOCKING_OK: Serial.println("DOCKING_OK"); break;
         case ADVERTISING: Serial.println("ADVERTISING"); break;
         case CONNECTING: Serial.println("CONNECTING"); break;
         case CONNECTED: Serial.println("CONNECTED"); break;
+        case ERROR: Serial.println("ERROR"); break;
+        default: Serial.println("UNKNOWN"); break;
       }
     }
   }

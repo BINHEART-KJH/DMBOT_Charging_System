@@ -3,20 +3,27 @@
 #include "station_gpio.h"
 #include "station_led.h"
 #include "station_ble.h"
+#include "config.h"
 
 StationState lastState = IDLE;
 
-void ble_rs485_run() {}  // 사용하지 않음
-
 void setup() {
+  delay(1000);
   Serial.begin(9600);
-  delay(500);
+  Serial.println("\n========================================");
+  Serial.println("DMBOT Station - Charging System (Improved)");
+  Serial.println("========================================");
 
   gpio_init();
+  delay(100);
+  
   led_init();
+  delay(100);
+  
   ble_init();
+  delay(100);
 
-  Serial.println("Station Setup Complete");
+  LOG_INFO("Setup complete - entering main loop");
 }
 
 void loop() {
