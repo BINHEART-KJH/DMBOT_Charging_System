@@ -5,4 +5,4 @@ void rs485_init();
 void rs485_run();
 void rs485_report();
 
-#endif
+#endif // ROBOT_RS485_H
